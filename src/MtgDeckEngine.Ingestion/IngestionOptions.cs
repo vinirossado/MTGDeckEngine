@@ -15,4 +15,10 @@ public sealed class IngestionOptions
 
     /// <summary>Max cards to resolve per commander (cap for Phase 1).</summary>
     public int MaxCardsPerCommander { get; set; } = 250;
+
+    /// <summary>Enable EDHTop16 tournament data ingestion (Phase 2).</summary>
+    public bool EnableEdhTop16 { get; set; } = true;
+
+    /// <summary>Max tournament entries per commander to ingest from EDHTop16.</summary>
+    public int MaxTournamentEntriesPerCommander { get; set; } = 100;
 }

@@ -1,0 +1,22 @@
+PREFIX mtg: <http://example.org/mtg#>
+
+# Cards EDHREC says are very popular but that never appear in top-cut decks.
+# Pure "perception vs reality" diagnostic. Reads from both the commander-context
+# (EDHREC) graph and the default graph (tournament entries).
+SELECT ?name ?inc (COUNT(?topCutDeck) AS ?topCutAppearances) WHERE {
+  GRAPH <http://example.org/mtg#context/xyris-the-writhing-storm> {
+    ?card mtg:hasInclusionPct ?inc .
+  }
+  ?card mtg:hasName ?name .
+  FILTER (?inc > 40.0)
+  OPTIONAL {
+    ?entry mtg:hasPlacement ?p ;
+           mtg:hasDeck       ?topCutDeck .
+    ?topCutDeck mtg:hasCommander mtg:commander/xyris-the-writhing-storm ;
+                mtg:containsCard ?card .
+    FILTER (?p <= 8)
+  }
+}
+GROUP BY ?name ?inc
+ORDER BY DESC(?inc) ?topCutAppearances
+LIMIT 25

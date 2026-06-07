@@ -38,8 +38,16 @@ public static class IngestionServiceCollectionExtensions
             c.DefaultRequestHeaders.Add("Accept", "application/json");
             c.DefaultRequestHeaders.Add("User-Agent", "MtgDeckEngine/0.1 (+phase1)");
         });
+        services.AddHttpClient<EdhTop16Client>(c =>
+        {
+            c.BaseAddress = new Uri("https://edhtop16.com/api/graphql");
+            c.DefaultRequestHeaders.Add("Accept", "application/json");
+            c.DefaultRequestHeaders.Add("User-Agent", "MtgDeckEngine/0.2 (+phase2)");
+            c.Timeout = TimeSpan.FromSeconds(30);
+        });
 
         services.AddScoped<CommanderIngestor>();
+        services.AddScoped<EdhTop16Ingestor>();
         services.AddHostedService<StartupIngestionWorker>();
         return services;
     }

@@ -27,19 +27,37 @@ public sealed class CommandersController(IDeckRecommendationService recs) : Cont
         [FromQuery] string? excludeCategories = null,
         [FromQuery] string? includeOnlyCategories = null,
         [FromQuery] int limit = 50,
+        [FromQuery] int? minTopCutAppearances = null,
+        [FromQuery] int? maxPlacement = null,
+        [FromQuery] RecommendationSource source = RecommendationSource.All,
         CancellationToken ct = default)
     {
         var filter = new RecommendationFilter(
-            MaxPriceEur:           maxPriceEur,
-            MinInclusionPct:       minInclusion,
-            MinSynergy:            minSynergy,
-            ExcludeLands:          excludeLands,
-            ExcludeBasicLands:     excludeBasicLands,
-            ExcludeCategories:     Split(excludeCategories),
-            IncludeOnlyCategories: Split(includeOnlyCategories),
-            Limit:                 limit);
+            MaxPriceEur:            maxPriceEur,
+            MinInclusionPct:        minInclusion,
+            MinSynergy:             minSynergy,
+            ExcludeLands:           excludeLands,
+            ExcludeBasicLands:      excludeBasicLands,
+            ExcludeCategories:      Split(excludeCategories),
+            IncludeOnlyCategories:  Split(includeOnlyCategories),
+            Limit:                  limit,
+            MinTopCutAppearances:   minTopCutAppearances,
+            MaxPlacement:           maxPlacement,
+            Source:                 source);
         var items = await recs.GetRecommendationsAsync(slug, filter, ct);
         return Ok(items);
+    }
+
+    /// <summary>
+    /// Tournament-derived signals for the commander (entry count, top cuts, win
+    /// rate, meta share). Sourced from EDHTop16 ingestion.
+    /// </summary>
+    [HttpGet("{slug}/meta")]
+    public async Task<ActionResult<CommanderMeta>> Meta(
+        string slug, CancellationToken ct = default)
+    {
+        var meta = await recs.GetCommanderMetaAsync(slug, ct);
+        return Ok(meta);
     }
 
     /// <summary>

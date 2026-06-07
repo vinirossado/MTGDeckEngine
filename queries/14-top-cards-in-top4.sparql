@@ -1,0 +1,19 @@
+PREFIX mtg: <http://example.org/mtg#>
+
+# Cards in Xyris decks that reached Top 4 in any tournament — the headline
+# Phase 2 query. Counts how many qualifying decks ran each card, drops cards
+# above €5.
+SELECT ?name ?priceEur (COUNT(DISTINCT ?deck) AS ?numDecks) WHERE {
+  ?entry mtg:inTournament ?t ;
+         mtg:hasPlacement ?placement ;
+         mtg:hasDeck       ?deck .
+  ?deck  mtg:hasCommander  mtg:commander/xyris-the-writhing-storm ;
+         mtg:containsCard  ?card .
+  ?card  mtg:hasName       ?name .
+  OPTIONAL { ?card mtg:hasPriceEur ?priceEur }
+  FILTER (?placement <= 4)
+  FILTER (!BOUND(?priceEur) || ?priceEur <= 5.0)
+}
+GROUP BY ?name ?priceEur
+ORDER BY DESC(?numDecks) ?priceEur
+LIMIT 25

@@ -1,0 +1,17 @@
+PREFIX mtg: <http://example.org/mtg#>
+
+# Most recent top-cut Xyris deck appearances, with tournament context.
+# Replace the FILTER if you want a wider window.
+SELECT ?date ?tName ?placement ?pilot ?priceUsd WHERE {
+  ?entry mtg:inTournament ?t ;
+         mtg:hasPlacement ?placement ;
+         mtg:hasDeck       ?deck .
+  ?deck  mtg:hasCommander mtg:commander/xyris-the-writhing-storm .
+  ?t     mtg:hasName ?tName ;
+         mtg:hasDate ?date .
+  OPTIONAL { ?entry mtg:hasPilotName ?pilot }
+  OPTIONAL { ?deck  mtg:hasTotalPriceUsd ?priceUsd }
+  FILTER (?placement <= 16)
+}
+ORDER BY DESC(?date) ?placement
+LIMIT 25
