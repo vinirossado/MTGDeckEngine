@@ -95,16 +95,35 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         RecommendationFilter filter,
         CancellationToken ct)
     {
-        // Greedy: fetch a wider pool than 99 so the cap can drop expensive misses.
-        // 300 covers all practical cases; the SPARQL ORDER BY already favours
-        // the highest-inclusion cards.
-        var fatFilter = filter with { Limit = 300 };
+        // Quota-aware greedy: fetch a wide pool, bucket cards by EDHREC
+        // category, then fill each bucket up to its target before sweeping
+        // leftover budget across whatever scores highest.
+        var fatFilter = filter with { Limit = 500, ExcludeBasicLands = false };
         var pool = await GetRecommendationsAsync(commanderSlug, fatFilter, ct);
 
-        var chosen = new List<CardRecommendation>(99);
+        var quotas = DeckBuildQuotas.Default;
+        var taken = new Dictionary<DeckBucket, List<CardRecommendation>>();
+        foreach (DeckBucket b in Enum.GetValues<DeckBucket>())
+            taken[b] = new List<CardRecommendation>();
         var seenOracleIds = new HashSet<string>(StringComparer.Ordinal);
-        decimal running = 0m;
+        var running = 0m;
 
+        // Pass 1 — fill each bucket up to its target.
+        foreach (var card in pool)
+        {
+            if (seenOracleIds.Contains(card.OracleId)) continue;
+            var bucket = Categorise(card);
+            var limit = QuotaFor(quotas, bucket);
+            if (taken[bucket].Count >= limit) continue;
+            var price = card.PriceEur ?? 0m;
+            if (running + price > totalBudgetEur) continue;
+            taken[bucket].Add(card);
+            seenOracleIds.Add(card.OracleId);
+            running += price;
+        }
+
+        // Pass 2 — top up to 99 with whatever's left within budget.
+        var chosen = taken.Values.SelectMany(v => v).ToList();
         foreach (var card in pool)
         {
             if (chosen.Count >= 99) break;
@@ -116,6 +135,32 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         }
         return new BudgetDeck(commanderSlug, running, chosen.Count, chosen);
     }
+
+    // Bucket EDHREC's free-form category labels into the small set of roles
+    // the quota model cares about. "Top Cards" / "High Synergy" become
+    // "Other" so the builder still drafts them when no specific role applies.
+    private enum DeckBucket { Lands, Ramp, Draw, Removal, Creatures, Other }
+
+    private static DeckBucket Categorise(CardRecommendation card)
+    {
+        var c = (card.Category ?? "").ToLowerInvariant();
+        if (c.Contains("land")) return DeckBucket.Lands;
+        if (c.Contains("ramp")) return DeckBucket.Ramp;
+        if (c.Contains("card draw") || c == "draw") return DeckBucket.Draw;
+        if (c.Contains("removal") || c.Contains("interaction")) return DeckBucket.Removal;
+        if (c.Contains("creature")) return DeckBucket.Creatures;
+        return DeckBucket.Other;
+    }
+
+    private static int QuotaFor(DeckBuildQuotas q, DeckBucket b) => b switch
+    {
+        DeckBucket.Lands     => q.Lands,
+        DeckBucket.Ramp      => q.Ramp,
+        DeckBucket.Draw      => q.Draw,
+        DeckBucket.Removal   => q.Removal,
+        DeckBucket.Creatures => q.Creatures,
+        _                    => q.Other,
+    };
 
     private static string BuildQuery(string commanderSlug, RecommendationFilter f)
     {
