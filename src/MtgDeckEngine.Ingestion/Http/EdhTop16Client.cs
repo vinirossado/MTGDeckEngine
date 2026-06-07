@@ -122,12 +122,17 @@ public sealed class EdhTop16Client(HttpClient http, ILogger<EdhTop16Client> logg
         var req = new GraphQlRequest { Query = query, Variables = variables };
         logger.LogDebug("EDHTop16 GraphQL → {Bytes} bytes", query.Length);
 
-        // Explicit absolute URL: HttpClient.BaseAddress without a trailing
-        // slash + PostAsync("") is ambiguous in some runtimes; the absolute
-        // form is unambiguous.
-        var resp = await http.PostAsJsonAsync(
-            new Uri("https://edhtop16.com/api/graphql"),
-            req, Json, ct).ConfigureAwait(false);
+        // EDHTop16 strictly rejects Content-Type values with a charset suffix
+        // (PostAsJsonAsync sends "application/json; charset=utf-8" which they
+        // 400 with "Unsupported Content-Type"). Build the content by hand so
+        // we control the header exactly.
+        var payload = JsonSerializer.Serialize(req, Json);
+        using var content = new StringContent(payload);
+        content.Headers.ContentType =
+            new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+
+        var resp = await http.PostAsync(
+            new Uri("https://edhtop16.com/api/graphql"), content, ct).ConfigureAwait(false);
 
         if (!resp.IsSuccessStatusCode)
         {
