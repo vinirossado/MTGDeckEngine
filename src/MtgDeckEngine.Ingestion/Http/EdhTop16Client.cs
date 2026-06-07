@@ -122,8 +122,19 @@ public sealed class EdhTop16Client(HttpClient http, ILogger<EdhTop16Client> logg
         var req = new GraphQlRequest { Query = query, Variables = variables };
         logger.LogDebug("EDHTop16 GraphQL → {Bytes} bytes", query.Length);
 
-        var resp = await http.PostAsJsonAsync("", req, Json, ct).ConfigureAwait(false);
-        resp.EnsureSuccessStatusCode();
+        // Explicit absolute URL: HttpClient.BaseAddress without a trailing
+        // slash + PostAsync("") is ambiguous in some runtimes; the absolute
+        // form is unambiguous.
+        var resp = await http.PostAsJsonAsync(
+            new Uri("https://edhtop16.com/api/graphql"),
+            req, Json, ct).ConfigureAwait(false);
+
+        if (!resp.IsSuccessStatusCode)
+        {
+            var errBody = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            logger.LogError("EDHTop16 HTTP {Status}: {Body}", (int)resp.StatusCode, errBody);
+            resp.EnsureSuccessStatusCode();
+        }
 
         var body = await resp.Content.ReadFromJsonAsync<GraphQlResponse<T>>(Json, ct).ConfigureAwait(false);
         if (body is null) return default;
