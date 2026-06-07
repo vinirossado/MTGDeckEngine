@@ -1,0 +1,13 @@
+apiVersion: v2
+name: mtg-deck-engine
+description: MTG knowledge-graph engine — API + nightly ingestion CronJob
+type: application
+version: 0.4.0
+appVersion: "0.4.0"
+keywords:
+  - mtg
+  - knowledge-graph
+  - rdf
+  - sparql
+  - neptune
+home: https://github.com/vinirossado/MTGDeckEngine

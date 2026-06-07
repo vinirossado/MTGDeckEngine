@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mtg.fullname" . }}
+  labels: {{- include "mtg.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector: {{- include "mtg.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

@@ -1,0 +1,54 @@
+image:
+  repository: ghcr.io/vinirossado/mtg-deck-engine
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# ServiceAccount + IRSA. Provide the IAM role ARN for AWS workloads.
+serviceAccount:
+  create: true
+  name: mtg-deck-engine
+  irsaRoleArn: ""    # arn:aws:iam::123:role/mtg-deck-engine
+
+replicas: 2
+
+resources:
+  requests: { cpu: 100m, memory: 256Mi }
+  limits:   { cpu: 1000m, memory: 1Gi }
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 8
+  targetCPU: 70
+  targetMemory: 75
+
+# Triplestore endpoint. For Neptune set both to https://CLUSTER:8182/sparql.
+sparql:
+  queryEndpoint:  "https://CLUSTER.REGION.neptune.amazonaws.com:8182/sparql"
+  updateEndpoint: "https://CLUSTER.REGION.neptune.amazonaws.com:8182/sparql"
+  useSigV4: false
+  awsRegion: ""
+
+ingestion:
+  enableEdhTop16: true
+  enableTopDeck:  true
+  cronSchedule:   "0 3 * * *"
+
+topdeck:
+  formats: ["EDH", "Modern"]
+  lookbackDays: 90
+  minParticipants: 16
+
+ai:
+  enabled: false
+  model:  "claude-sonnet-4-6"
+
+# Pass via --set-string or sealed-secret. NEVER commit real values.
+secrets:
+  topdeckApiKey:    ""
+  anthropicApiKey:  ""
+
+ingress:
+  enabled: true
+  host: "api.mtg.example.com"
+  certificateArn: ""

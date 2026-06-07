@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mtg.fullname" . }}
+  labels: {{- include "mtg.labels" . | nindent 4 }}
+data:
+  ASPNETCORE_ENVIRONMENT: "Production"
+  ASPNETCORE_URLS: "http://+:8080"
+  Fuseki__QueryEndpoint:  {{ .Values.sparql.queryEndpoint | quote }}
+  Fuseki__UpdateEndpoint: {{ .Values.sparql.updateEndpoint | quote }}
+  Fuseki__UseSigV4Signing: {{ .Values.sparql.useSigV4 | quote }}
+  {{- if .Values.sparql.awsRegion }}
+  Fuseki__AwsRegion: {{ .Values.sparql.awsRegion | quote }}
+  {{- end }}
+  Ingestion__EnableEdhTop16: {{ .Values.ingestion.enableEdhTop16 | quote }}
+  Ingestion__EnableTopDeck:  {{ .Values.ingestion.enableTopDeck  | quote }}
+  TopDeck__LookbackDays:    {{ .Values.topdeck.lookbackDays    | quote }}
+  TopDeck__MinParticipants: {{ .Values.topdeck.minParticipants | quote }}
+  {{- range $i, $f := .Values.topdeck.formats }}
+  TopDeck__Formats__{{ $i }}: {{ $f | quote }}
+  {{- end }}
+  Ai__Enabled: {{ .Values.ai.enabled | quote }}
+  Ai__Model: {{ .Values.ai.model | quote }}

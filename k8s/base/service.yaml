@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mtg-deck-engine-api
+  namespace: mtg-deck-engine
+spec:
+  type: ClusterIP
+  selector:
+    app: mtg-deck-engine-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

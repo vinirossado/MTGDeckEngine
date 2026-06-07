@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "mtg.fullname" . }}-ingest
+  labels: {{- include "mtg.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.ingestion.cronSchedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600
+      template:
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: {{ .Values.serviceAccount.name }}
+          containers:
+            - name: ingest
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              envFrom:
+                - configMapRef: { name: {{ include "mtg.fullname" . }} }
+                {{- if or .Values.secrets.topdeckApiKey .Values.secrets.anthropicApiKey }}
+                - secretRef:    { name: {{ include "mtg.fullname" . }} }
+                {{- end }}
+              env:
+                - name: Ingestion__RunOnce
+                  value: "true"
+              resources:
+                requests: { cpu: 200m, memory: 512Mi }
+                limits:   { cpu: 2000m, memory: 2Gi }

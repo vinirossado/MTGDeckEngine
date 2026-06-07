@@ -1,0 +1,35 @@
+# Nightly EDHREC + EDHTop16 + TopDeck refresh. The same container image runs
+# in a one-shot mode controlled by Ingestion__RunOnce=true (handled by the
+# StartupIngestionWorker -- it exits cleanly after the run when the env var
+# is set, leaving no daemon behind).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mtg-deck-engine-ingest
+  namespace: mtg-deck-engine
+spec:
+  schedule: "0 3 * * *"      # 03:00 UTC daily
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600
+      template:
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: mtg-deck-engine
+          containers:
+            - name: ingest
+              image: ghcr.io/vinirossado/mtg-deck-engine:latest
+              imagePullPolicy: IfNotPresent
+              envFrom:
+                - configMapRef: { name: mtg-deck-engine }
+                - secretRef:    { name: mtg-deck-engine }
+              env:
+                - name: Ingestion__RunOnce
+                  value: "true"
+              resources:
+                requests: { cpu: "200m", memory: "512Mi" }
+                limits:   { cpu: "2000m", memory: "2Gi" }

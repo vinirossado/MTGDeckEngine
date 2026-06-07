@@ -1,0 +1,21 @@
+# Non-secret configuration. API keys (TopDeck, Anthropic) live in a Secret.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mtg-deck-engine
+  namespace: mtg-deck-engine
+data:
+  ASPNETCORE_ENVIRONMENT: "Production"
+  ASPNETCORE_URLS: "http://+:8080"
+  # Point at your Neptune cluster (same SPARQL 1.1 protocol as local Fuseki).
+  Fuseki__QueryEndpoint:  "https://CLUSTER.REGION.neptune.amazonaws.com:8182/sparql"
+  Fuseki__UpdateEndpoint: "https://CLUSTER.REGION.neptune.amazonaws.com:8182/sparql"
+  # Set to true when calling Neptune from outside its VPC (otherwise leave false).
+  Fuseki__UseSigV4Signing: "false"
+  Ingestion__EnableEdhTop16: "true"
+  Ingestion__EnableTopDeck:  "true"
+  TopDeck__Formats__0: "EDH"
+  TopDeck__Formats__1: "Modern"
+  TopDeck__LookbackDays: "90"
+  TopDeck__MinParticipants: "16"
+  Ai__Enabled: "false"

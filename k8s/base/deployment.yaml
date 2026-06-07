@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mtg-deck-engine-api
+  namespace: mtg-deck-engine
+  labels:
+    app: mtg-deck-engine-api
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: mtg-deck-engine-api
+  template:
+    metadata:
+      labels:
+        app: mtg-deck-engine-api
+    spec:
+      serviceAccountName: mtg-deck-engine
+      containers:
+        - name: api
+          image: ghcr.io/vinirossado/mtg-deck-engine:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: mtg-deck-engine
+            - secretRef:
+                name: mtg-deck-engine
+          # Readiness: only routable when the Neptune endpoint is reachable.
+          # Liveness intentionally pings the in-process /health (no DB call),
+          # so a transient Neptune outage doesn't cascade into pod restarts.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 5
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits:   { cpu: "1000m", memory: "1Gi" }
