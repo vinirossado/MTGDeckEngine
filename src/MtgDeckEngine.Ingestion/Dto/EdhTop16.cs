@@ -13,12 +13,25 @@ public sealed class GraphQlRequest
 public sealed class GraphQlResponse<T>
 {
     [JsonPropertyName("data")] public T? Data { get; set; }
-    [JsonPropertyName("errors")] public List<GraphQlError>? Errors { get; set; }
-}
 
-public sealed class GraphQlError
-{
-    [JsonPropertyName("message")] public string Message { get; set; } = "";
+    // EDHTop16 returns errors as a list of plain strings, while standard
+    // GraphQL servers (Apollo, Hot Chocolate, etc.) return a list of
+    // objects with `message`, `locations`, `path`, `extensions`. Accept both
+    // by parsing as raw JsonElement and converting at read time.
+    [JsonPropertyName("errors")] public List<System.Text.Json.JsonElement>? Errors { get; set; }
+
+    public string? FirstErrorMessage()
+    {
+        if (Errors is not { Count: > 0 }) return null;
+        var first = Errors[0];
+        if (first.ValueKind == System.Text.Json.JsonValueKind.String)
+            return first.GetString();
+        if (first.ValueKind == System.Text.Json.JsonValueKind.Object
+            && first.TryGetProperty("message", out var msg)
+            && msg.ValueKind == System.Text.Json.JsonValueKind.String)
+            return msg.GetString();
+        return first.ToString();
+    }
 }
 
 // ----- EDHTop16 schema slice we actually use --------------------------------
@@ -88,7 +101,7 @@ public sealed class EdhTop16Player
 {
     [JsonPropertyName("id")] public string Id { get; set; } = "";
     [JsonPropertyName("name")] public string? Name { get; set; }
-    [JsonPropertyName("profile")] public string? Profile { get; set; }
+    [JsonPropertyName("topdeckProfile")] public string? TopdeckProfile { get; set; }
 }
 
 public sealed class EdhTop16Card

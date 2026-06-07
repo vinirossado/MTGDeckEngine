@@ -58,7 +58,7 @@ public sealed class EdhTop16Client(HttpClient http, ILogger<EdhTop16Client> logg
                   player {
                     id
                     name
-                    profile
+                    topdeckProfile
                   }
                   maindeck {
                     name
@@ -143,11 +143,11 @@ public sealed class EdhTop16Client(HttpClient http, ILogger<EdhTop16Client> logg
 
         var body = await resp.Content.ReadFromJsonAsync<GraphQlResponse<T>>(Json, ct).ConfigureAwait(false);
         if (body is null) return default;
-        if (body.Errors is { Count: > 0 })
+        var firstError = body.FirstErrorMessage();
+        if (firstError is not null)
         {
-            var first = body.Errors[0].Message;
-            logger.LogWarning("EDHTop16 GraphQL errors: {Error}", first);
-            throw new InvalidOperationException($"EDHTop16 returned GraphQL errors: {first}");
+            logger.LogWarning("EDHTop16 GraphQL errors: {Error}", firstError);
+            throw new InvalidOperationException($"EDHTop16 returned GraphQL errors: {firstError}");
         }
         return body.Data;
     }
