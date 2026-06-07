@@ -73,24 +73,14 @@ public sealed class EdhTop16Ingestor(
 
     /// <summary>
     /// EDHTop16's GraphQL takes the commander's display name as it appears on
-    /// Scryfall (e.g. "Xyris, the Writhing Storm"). Our slug is kebab-cased so
-    /// we round-trip via the Scryfall bulk cache.
+    /// Scryfall (e.g. "Xyris, the Writhing Storm"). Our slug is kebab-cased
+    /// and slug → name is lossy (commas + case are gone), so we round-trip
+    /// through the Scryfall bulk cache's slug index — which is built once at
+    /// load time and is the authoritative reverse mapping.
     /// </summary>
     private async Task<string?> ResolveDisplayNameAsync(string slug, CancellationToken ct)
     {
         await scryfall.EnsureLoadedAsync(ct).ConfigureAwait(false);
-
-        // Best effort: try the de-slugified guess first.
-        var guess = string.Join(" ", slug.Split('-').Select(p => p.Length > 0
-            ? char.ToUpperInvariant(p[0]) + p[1..]
-            : p));
-        if (scryfall.TryGetByName(guess, out var card))
-            return card.Name;
-
-        // Fall back: scan the cache for a card whose slug-form matches.
-        // (Used for commanders with apostrophes, en-dashes, etc.)
-        if (scryfall.TryGetByName(guess.Replace(" ", " ,"), out var alt))
-            return alt.Name;
-        return null;
+        return scryfall.TryGetBySlug(slug, out var card) ? card.Name : null;
     }
 }

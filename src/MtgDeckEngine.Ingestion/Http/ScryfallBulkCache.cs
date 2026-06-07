@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Logging;
+using MtgDeckEngine.Core;
 using MtgDeckEngine.Ingestion.Dto;
 
 namespace MtgDeckEngine.Ingestion.Http;
@@ -20,6 +21,7 @@ public sealed class ScryfallBulkCache(HttpClient http, ILogger<ScryfallBulkCache
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private Dictionary<string, ScryfallCard>? _byName;
+    private Dictionary<string, ScryfallCard>? _bySlug;
     private readonly SemaphoreSlim _loadGate = new(1, 1);
 
     public int Count => _byName?.Count ?? 0;
@@ -46,8 +48,10 @@ public sealed class ScryfallBulkCache(HttpClient http, ILogger<ScryfallBulkCache
                 logger.LogInformation("Scryfall bulk cache fresh — using local file.");
             }
 
-            _byName = await LoadIntoIndexAsync(path, ct).ConfigureAwait(false);
-            logger.LogInformation("Scryfall bulk cache loaded: {Count} cards.", _byName.Count);
+            (_byName, _bySlug) = await LoadIntoIndexAsync(path, ct).ConfigureAwait(false);
+            logger.LogInformation(
+                "Scryfall bulk cache loaded: {Count} cards (indexed by name + slug).",
+                _byName.Count);
         }
         finally
         {
@@ -58,6 +62,23 @@ public sealed class ScryfallBulkCache(HttpClient http, ILogger<ScryfallBulkCache
     public bool TryGetByName(string name, out ScryfallCard card)
     {
         if (_byName is not null && _byName.TryGetValue(Normalize(name), out var c))
+        {
+            card = c;
+            return true;
+        }
+        card = default!;
+        return false;
+    }
+
+    /// <summary>
+    /// Resolve a kebab-case slug (the same slug format used by EDHREC, e.g.
+    /// "xyris-the-writhing-storm") back to the canonical Scryfall card. Slug
+    /// → display name is lossy (commas and case are stripped), so we maintain
+    /// a separate slug index built at load time.
+    /// </summary>
+    public bool TryGetBySlug(string slug, out ScryfallCard card)
+    {
+        if (_bySlug is not null && _bySlug.TryGetValue(slug, out var c))
         {
             card = c;
             return true;
@@ -91,8 +112,9 @@ public sealed class ScryfallBulkCache(HttpClient http, ILogger<ScryfallBulkCache
         File.Move(tmp, path, overwrite: true);
     }
 
-    private static async Task<Dictionary<string, ScryfallCard>> LoadIntoIndexAsync(
-        string path, CancellationToken ct)
+    private static async Task<(Dictionary<string, ScryfallCard> ByName,
+                                Dictionary<string, ScryfallCard> BySlug)>
+        LoadIntoIndexAsync(string path, CancellationToken ct)
     {
         await using var fs = File.OpenRead(path);
         var cards = await JsonSerializer.DeserializeAsync<List<ScryfallCard>>(fs, Json, ct)
@@ -101,13 +123,15 @@ public sealed class ScryfallBulkCache(HttpClient http, ILogger<ScryfallBulkCache
 
         // Prefer cards with an oracle_id (skips tokens etc.) and de-dupe by name —
         // multiple printings share an oracle_id, just keep the first we see.
-        var dict = new Dictionary<string, ScryfallCard>(StringComparer.OrdinalIgnoreCase);
+        var byName = new Dictionary<string, ScryfallCard>(StringComparer.OrdinalIgnoreCase);
+        var bySlug = new Dictionary<string, ScryfallCard>(StringComparer.Ordinal);
         foreach (var c in cards)
         {
             if (string.IsNullOrEmpty(c.OracleId)) continue;
-            dict.TryAdd(Normalize(c.Name), c);
+            byName.TryAdd(Normalize(c.Name), c);
+            bySlug.TryAdd(MtgVocab.Slugify(c.Name), c);
         }
-        return dict;
+        return (byName, bySlug);
     }
 
     private static string Normalize(string name) => name.Trim();
