@@ -373,14 +373,19 @@ curl -X POST 'http://localhost:3030/mtg/update' \
 - **Phase 3 — Multi-format (done — TopDeck.gg).** REST ingestion of
   tournament data across every TopDeck-supported format (EDH, Modern,
   Pioneer, Legacy, Standard, Pauper, …). Multi-format ontology + relaxed
-  SHACL shapes. Feature-flagged behind a free API key. Tournament data
-  attributed to [TopDeck.gg](https://topdeck.gg).
-- **Phase 4 — Multi-commander + AI layer.** Generalised ingestion across any
-  commander slug at the API level; LLM-backed deck-suggestion endpoint;
-  smarter (type-quota-aware, MIP-based) budget deck builder.
-- **Phase 5 — AWS.** Swap Fuseki for Amazon Neptune (same SPARQL 1.1
-  protocol); deploy API to EKS; background workers as CronJobs;
-  CloudWatch / X-Ray observability.
+  SHACL shapes. Feature-flagged behind a free API key.
+- **Phase 4 — Format endpoints + smarter builder + AI (done).**
+  `/api/formats`, `/api/formats/{format}/meta`,
+  `/api/formats/{format}/staples`, `/api/commanders` (list).
+  Quota-aware budget deck builder (Lands 37 · Ramp 10 · Draw 10 ·
+  Removal 8 · Creatures 20 · Other 14). `POST /api/commanders/{slug}/ai/suggest`
+  (Anthropic, prompt-cached, feature-flagged).
+- **Phase 5 — AWS deployment (done — infra-as-code).** `FusekiOptions`
+  documented to work against Neptune unchanged (SPARQL 1.1 wire-compatible);
+  `k8s/` Kustomize layout (base + dev/prod overlays); `deploy/helm/`
+  Helm chart with IRSA / ConfigMap / Secret / HPA / Ingress / nightly
+  CronJob; `terraform/` modules + envs for VPC + EKS + Neptune + IRSA.
+  Apply with `terraform apply` then `helm install`.
 
 > Tournament data sourced in part from [TopDeck.gg](https://topdeck.gg).
 

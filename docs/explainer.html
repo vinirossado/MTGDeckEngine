@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MTG Deck Intelligence Engine — How it works</title>
+<style>
+  :root {
+    --bg: #07101f;
+    --panel: #0f1d33;
+    --panel-2: #18253c;
+    --border: #2a3a55;
+    --text: #e7ecf3;
+    --muted: #93a3bd;
+    --accent: #6ee7ff;        /* sky/teal */
+    --accent-2: #c4b5fd;      /* lavender */
+    --ok: #86efac;
+    --warn: #fcd34d;
+    --link: #93c5fd;
+    --code-bg: #03080f;
+    --max: 1180px;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(900px 600px at 80% -10%, rgba(110,231,255,0.10), transparent 60%),
+      radial-gradient(800px 500px at -10% 110%, rgba(196,181,253,0.10), transparent 60%),
+      var(--bg);
+    color: var(--text);
+    font: 16px/1.7 -apple-system, "SF Pro Text", system-ui, "Segoe UI", Inter, sans-serif;
+  }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, pre, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px 16px; overflow-x: auto;
+    font-size: 13px; line-height: 1.55;
+  }
+  code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; font-size: 0.9em; }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  .kw  { color: #f472b6; }
+  .var { color: var(--accent); }
+  .uri { color: var(--warn); }
+  .lit { color: var(--ok); }
+  .com { color: var(--muted); font-style: italic; }
+
+  /* layout shell */
+  .shell { max-width: var(--max); margin: 0 auto; padding: 56px 32px 96px; }
+  header.hero { padding-top: 32px; padding-bottom: 28px; border-bottom: 1px solid var(--border); }
+  .eyebrow { font-size: 12px; color: var(--accent); letter-spacing: 2px; text-transform: uppercase;
+    font-weight: 600; margin-bottom: 12px; }
+  h1 { margin: 0 0 16px; font-size: 44px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.1; }
+  h2 { margin: 64px 0 18px; font-size: 28px; font-weight: 600; letter-spacing: -0.01em;
+    border-left: 3px solid var(--accent); padding-left: 14px; }
+  h3 { margin: 28px 0 12px; font-size: 19px; font-weight: 600; color: var(--accent-2); }
+  h4 { margin: 18px 0 8px; font-size: 15px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.5px; }
+  p, ul, ol { color: var(--text); }
+  ul, ol { padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  .lede { font-size: 18px; color: var(--muted); max-width: 760px; }
+
+  /* navbar */
+  nav.toc {
+    position: sticky; top: 0;
+    background: rgba(7,16,31,0.85);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 32px;
+    font-size: 13px; z-index: 50;
+    display: flex; gap: 18px; flex-wrap: wrap; align-items: center;
+  }
+  nav.toc strong { color: var(--accent); margin-right: 12px; }
+  nav.toc a { color: var(--muted); }
+  nav.toc a:hover { color: var(--text); text-decoration: none; }
+
+  /* cards */
+  .grid { display: grid; gap: 16px; }
+  .grid.cols-2 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+  .grid.cols-3 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .card h4 { margin-top: 0; color: var(--accent); }
+  .pill { display: inline-block; padding: 2px 10px; background: var(--panel-2);
+    border: 1px solid var(--border); border-radius: 999px; font-size: 11px;
+    color: var(--muted); margin-right: 4px; }
+  .pill.green { color: var(--ok); border-color: rgba(134,239,172,0.4); }
+  .pill.amber { color: var(--warn); border-color: rgba(252,211,77,0.4); }
+  .pill.violet { color: var(--accent-2); border-color: rgba(196,181,253,0.4); }
+
+  /* tables */
+  table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 14px 0; }
+  th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { background: var(--panel); color: var(--muted); font-weight: 600;
+    text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
+  td.mono { font-family: ui-monospace, monospace; font-size: 13px; }
+  td .pill { font-size: 10px; }
+
+  /* triple diagram */
+  .triple-diagram {
+    display: grid; grid-template-columns: auto auto auto auto auto;
+    gap: 6px; align-items: center; justify-content: center;
+    padding: 22px; margin: 14px 0;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  }
+  .triple-node {
+    padding: 8px 16px; border-radius: 8px; font-size: 14px; font-weight: 500;
+    background: var(--panel-2); border: 1px solid var(--border);
+  }
+  .triple-node.uri { color: var(--accent); border-color: var(--accent); }
+  .triple-node.pred { color: var(--accent-2); border-color: var(--accent-2); background: transparent; }
+  .triple-node.lit { color: var(--ok); border-color: var(--ok); }
+  .arrow { color: var(--muted); font-size: 18px; }
+
+  /* architecture diagram */
+  .arch {
+    display: grid; gap: 14px;
+    grid-template-columns: 1fr 1fr 1fr;
+    padding: 22px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; font-size: 13px;
+  }
+  .arch .box {
+    padding: 14px; background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .arch .box h5 { margin: 0 0 6px; font-size: 12px; color: var(--accent); text-transform: uppercase;
+    letter-spacing: 0.5px; }
+  .arch .box ul { margin: 4px 0 0; padding-left: 18px; color: var(--muted); }
+  .arch .box.full { grid-column: 1 / -1; }
+
+  /* phase timeline */
+  .timeline { position: relative; padding-left: 28px; margin: 18px 0; }
+  .timeline::before { content: ""; position: absolute; left: 9px; top: 6px; bottom: 6px;
+    width: 2px; background: var(--border); }
+  .step { position: relative; margin-bottom: 28px; }
+  .step::before { content: ""; position: absolute; left: -23px; top: 6px; width: 12px; height: 12px;
+    border-radius: 50%; background: var(--accent); border: 2px solid var(--bg);
+    box-shadow: 0 0 0 2px var(--accent); }
+  .step.done::before { background: var(--ok); box-shadow: 0 0 0 2px var(--ok); }
+  .step.planned::before { background: var(--muted); box-shadow: 0 0 0 2px var(--muted); }
+  .step h3 { margin-top: 0; color: var(--accent); }
+
+  /* asides */
+  aside.callout {
+    background: linear-gradient(180deg, rgba(196,181,253,0.08), rgba(110,231,255,0.05));
+    border-left: 4px solid var(--accent-2);
+    padding: 16px 18px; border-radius: 8px;
+    margin: 18px 0;
+  }
+  aside.callout strong { color: var(--accent-2); }
+
+  /* footer */
+  footer { margin-top: 80px; padding-top: 28px; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 13px; text-align: center; }
+</style>
+</head>
+<body>
+
+<nav class="toc">
+  <strong>MTG Deck Engine</strong>
+  <a href="#what">What it is</a>
+  <a href="#rdf">RDF & SPARQL</a>
+  <a href="#ontology">The ontology</a>
+  <a href="#shacl">SHACL</a>
+  <a href="#architecture">Architecture</a>
+  <a href="#sources">Data sources</a>
+  <a href="#journey">Phase journey</a>
+  <a href="#stack">Tech stack</a>
+  <a href="#aws">AWS deployment</a>
+  <a href="#try">Try it</a>
+</nav>
+
+<div class="shell">
+
+<header class="hero">
+  <div class="eyebrow">Project Explainer · Phases 1–5</div>
+  <h1>MTG Deck Intelligence Engine</h1>
+  <p class="lede">A .NET&nbsp;10 knowledge-graph engine that fuses Magic: The Gathering
+  data from EDHREC, EDHTop16, TopDeck.gg, and Scryfall into a single RDF triplestore —
+  then answers questions no individual source can. Deep focus: <strong>how a knowledge graph
+  changes the kind of question you can ask of a dataset.</strong></p>
+  <p class="lede" style="margin-top:14px">
+    <span class="pill green">Phase 1 ✓</span>
+    <span class="pill green">Phase 2 ✓</span>
+    <span class="pill green">Phase 3 ✓</span>
+    <span class="pill green">Phase 4 ✓</span>
+    <span class="pill green">Phase 5 ✓</span>
+  </p>
+</header>
+
+<!-- ========================================================== -->
+<h2 id="what">What problem this solves</h2>
+
+<p>If you play Commander (the most popular MTG format), you have access to two great
+free data sources:</p>
+
+<div class="grid cols-2">
+  <div class="card">
+    <h4>EDHREC</h4>
+    <p>Tells you what's <em>popular</em>: "78% of Xyris decks play Windfall."
+    Sourced from millions of community decklists.</p>
+  </div>
+  <div class="card">
+    <h4>EDHTop16 + TopDeck.gg</h4>
+    <p>Tells you what <em>wins</em>: "This deck list went Top 4 in a cEDH tournament
+    last weekend." Sourced from tournament organisers.</p>
+  </div>
+</div>
+
+<p>Those are <strong>different signals</strong>. A card can be popular but never win
+(precon staple). A card can win but be unknown (new tech). Neither source can answer the
+fused question on its own:</p>
+
+<aside class="callout">
+  <strong>"Which cards appear in Top-4 Xyris decks, cost under €5, and are popular enough
+  to swap into my casual build?"</strong>
+</aside>
+
+<p>This engine ingests both — and Scryfall for prices — into a knowledge graph and
+exposes a single API that answers questions across all of them.</p>
+
+<!-- ========================================================== -->
+<h2 id="rdf">RDF, in one screen</h2>
+
+<p>RDF (Resource Description Framework) is just data written as <strong>three-part
+statements</strong>: subject → predicate → object. Each statement is called a <em>triple</em>.</p>
+
+<div class="triple-diagram">
+  <div class="triple-node uri">mtg:card/windfall</div>
+  <span class="arrow">→</span>
+  <div class="triple-node pred">mtg:hasPriceEur</div>
+  <span class="arrow">→</span>
+  <div class="triple-node lit">"4.88"</div>
+</div>
+
+<p>Three triples about Windfall in our store:</p>
+
+<pre><code><span class="uri">mtg:card/08becc07-…</span>  <span class="kw">a</span>             <span class="uri">mtg:Card</span> .
+<span class="uri">mtg:card/08becc07-…</span>  <span class="uri">mtg:hasName</span>     <span class="lit">"Windfall"</span> .
+<span class="uri">mtg:card/08becc07-…</span>  <span class="uri">mtg:hasPriceEur</span> <span class="lit">"4.88"</span><span class="com">^^xsd:decimal</span> .</code></pre>
+
+<p>Notice three things:</p>
+<ol>
+  <li>The <strong>subject is a URI</strong>. That URI is global — anyone in the world can
+  point at the same Windfall.</li>
+  <li>The <strong>predicate is also a URI</strong>. <code>mtg:hasName</code> means something
+  specific (defined in our ontology), not just a string label.</li>
+  <li>The <strong>object</strong> can be a URI (linking to another resource) or a literal
+  (a string, number, date — typed via XSD).</li>
+</ol>
+
+<p>From those three rules, a few things follow that make RDF different from SQL:</p>
+
+<div class="grid cols-2">
+  <div class="card">
+    <h4>It's a graph, not a table</h4>
+    <p>Every triple is an edge. Cards link to colours, decks link to cards, entries link to
+    tournaments. You traverse by name, not by JOIN ON.</p>
+  </div>
+  <div class="card">
+    <h4>It's mergeable</h4>
+    <p>Two datasets that use the same URI for Windfall combine for free. No FK reconciliation,
+    no ETL. That's why this engine can fuse EDHREC, EDHTop16, and TopDeck without a
+    matching step — they all key on Scryfall's <code>oracle_id</code>.</p>
+  </div>
+  <div class="card">
+    <h4>It's schema-flexible</h4>
+    <p>Add a new predicate (e.g. <code>mtg:hasTournamentWinRate</code>) and old data still
+    works. No ALTER TABLE, no migration. Phase 2 added 9 new predicates without touching
+    Phase 1 code.</p>
+  </div>
+  <div class="card">
+    <h4>It speaks SPARQL</h4>
+    <p>The query language for RDF. Like SQL but you match graph patterns instead of joining
+    tables.</p>
+  </div>
+</div>
+
+<h3>The SPARQL query that answers the DoD</h3>
+
+<p>"Cards in Top-4 Xyris decks under €5" becomes:</p>
+
+<pre><code><span class="kw">PREFIX</span> mtg: <span class="uri">&lt;http://example.org/mtg#&gt;</span>
+
+<span class="kw">SELECT</span> <span class="var">?name</span> <span class="var">?priceEur</span> (<span class="kw">COUNT</span>(<span class="kw">DISTINCT</span> <span class="var">?deck</span>) <span class="kw">AS</span> <span class="var">?numDecks</span>) <span class="kw">WHERE</span> {
+  <span class="var">?entry</span> mtg:inTournament <span class="var">?t</span> ;
+         mtg:hasPlacement <span class="var">?placement</span> ;
+         mtg:hasDeck       <span class="var">?deck</span> .
+  <span class="var">?deck</span>  mtg:hasCommander  mtg:commander/xyris-the-writhing-storm ;
+         mtg:containsCard  <span class="var">?card</span> .
+  <span class="var">?card</span>  mtg:hasName       <span class="var">?name</span> .
+  <span class="kw">OPTIONAL</span> { <span class="var">?card</span> mtg:hasPriceEur <span class="var">?priceEur</span> }
+  <span class="kw">FILTER</span> (<span class="var">?placement</span> &lt;= <span class="lit">4</span>)
+  <span class="kw">FILTER</span> (!<span class="kw">BOUND</span>(<span class="var">?priceEur</span>) || <span class="var">?priceEur</span> &lt;= <span class="lit">5.0</span>)
+}
+<span class="kw">GROUP BY</span> <span class="var">?name</span> <span class="var">?priceEur</span>
+<span class="kw">ORDER BY</span> <span class="kw">DESC</span>(<span class="var">?numDecks</span>) <span class="var">?priceEur</span>
+<span class="kw">LIMIT</span> <span class="lit">25</span></code></pre>
+
+<p>Read it top-down like a sentence: "Find me every <em>tournament entry</em> in a
+<em>tournament</em> that has a <em>placement</em> and a <em>deck</em>, where that deck has
+Xyris as its commander and contains a card. The card has a name and maybe a price. Filter
+to top-4 and under €5. Count distinct decks per card."</p>
+
+<p>You couldn't write that against EDHREC or EDHTop16 alone — neither knows the other's
+data. In a knowledge graph it's one query.</p>
+
+<!-- ========================================================== -->
+<h2 id="ontology">The ontology — our schema in OWL</h2>
+
+<p>An <strong>ontology</strong> is the schema for an RDF dataset. It defines the classes,
+the predicates, and how they fit together. Ours lives in
+<code>src/MtgDeckEngine.Ontology/mtg-ontology.ttl</code> and looks like:</p>
+
+<pre><code><span class="com"># Classes</span>
+mtg:Card            <span class="kw">a</span> owl:Class .
+mtg:Commander       <span class="kw">a</span> owl:Class ; rdfs:subClassOf mtg:Card .
+mtg:Deck            <span class="kw">a</span> owl:Class .
+mtg:Tournament      <span class="kw">a</span> owl:Class .
+mtg:TournamentEntry <span class="kw">a</span> owl:Class .
+mtg:Color           <span class="kw">a</span> owl:Class .
+mtg:Category        <span class="kw">a</span> owl:Class .
+
+<span class="com"># A handful of predicates</span>
+mtg:hasName            <span class="kw">a</span> owl:DatatypeProperty ; rdfs:range xsd:string .
+mtg:hasOracleId        <span class="kw">a</span> owl:DatatypeProperty ; rdfs:range xsd:string .
+mtg:hasPriceEur        <span class="kw">a</span> owl:DatatypeProperty ; rdfs:range xsd:decimal .
+mtg:containsCard       <span class="kw">a</span> owl:ObjectProperty   ; rdfs:domain mtg:Deck ; rdfs:range mtg:Card .
+mtg:hasCommander       <span class="kw">a</span> owl:ObjectProperty   ; rdfs:domain mtg:Deck ; rdfs:range mtg:Commander .
+mtg:inTournament       <span class="kw">a</span> owl:ObjectProperty   ; rdfs:domain mtg:TournamentEntry ; rdfs:range mtg:Tournament .
+mtg:hasPlacement       <span class="kw">a</span> owl:DatatypeProperty ; rdfs:domain mtg:TournamentEntry ; rdfs:range xsd:integer .
+
+<span class="com"># Phase 2 additions — never touched the Phase 1 classes</span>
+mtg:hasTournamentEntryCount   <span class="kw">a</span> owl:DatatypeProperty ; rdfs:domain mtg:Commander ; rdfs:range xsd:integer .
+mtg:hasTournamentTopCutCount  <span class="kw">a</span> owl:DatatypeProperty ; rdfs:domain mtg:Commander ; rdfs:range xsd:integer .
+mtg:hasTournamentWinRate      <span class="kw">a</span> owl:DatatypeProperty ; rdfs:domain mtg:Commander ; rdfs:range xsd:decimal .
+
+<span class="com"># Phase 3 generalisation — hasFormat works on Tournament and Deck</span>
+mtg:hasFormat          <span class="kw">a</span> owl:DatatypeProperty ; rdfs:range xsd:string .</code></pre>
+
+<p>OWL gives you <em>open-world</em> semantics: missing data isn't false, just unknown. This
+is the opposite of SQL's closed-world model. It matches how messy real-world data behaves
+(EDHTop16 has prices in USD, TopDeck has them in EUR-ish, Scryfall has both — sometimes).</p>
+
+<h3>Named graphs — scoping data without losing the join</h3>
+
+<p>A subtlety: EDHREC's "78% inclusion" is true <em>for Xyris specifically</em>, not in
+general. So we don't write <code>mtg:card/windfall mtg:hasInclusionPct "78"</code> globally
+— that would lose the context.</p>
+
+<p>Instead we use <strong>named graphs</strong>: a way of grouping triples under a context
+URI. EDHREC data for Xyris lives in <code>mtg:context/xyris-the-writhing-storm</code>.</p>
+
+<pre><code><span class="com"># Global card data — default graph</span>
+mtg:card/windfall  mtg:hasName     <span class="lit">"Windfall"</span> ;
+                   mtg:hasPriceEur <span class="lit">"4.88"</span> .
+
+<span class="com"># Xyris-scoped EDHREC signal — named graph</span>
+<span class="kw">GRAPH</span> mtg:context/xyris-the-writhing-storm {
+    mtg:card/windfall  mtg:hasInclusionPct <span class="lit">"63.1"</span> ;
+                       mtg:hasSynergyScore <span class="lit">"0.54"</span> .
+}</code></pre>
+
+<p>Queries can mix-and-match: "inclusion% from Xyris's context, price from the default
+graph". Same Windfall URI on both sides — joins for free.</p>
+
+<!-- ========================================================== -->
+<h2 id="shacl">SHACL — validating before write</h2>
+
+<p>OWL describes what data <em>can</em> exist. <strong>SHACL</strong> describes what data
+<em>must</em>. It's like CHECK constraints for graphs.</p>
+
+<pre><code>mtg:CardShape <span class="kw">a</span> sh:NodeShape ;
+    sh:targetClass mtg:Card ;
+    sh:property [
+        sh:path mtg:hasOracleId ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+        sh:message <span class="lit">"Card must have a Scryfall oracle ID."</span>
+    ] ;
+    sh:property [
+        sh:path mtg:hasName ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string
+    ] .</code></pre>
+
+<p>Before any graph is written, we run it through <code>ShaclValidator</code>:
+non-conforming triples raise <code>ShaclValidationException</code> with a full report.
+This catches structural bugs at the ingestion boundary instead of letting them rot
+in the store.</p>
+
+<aside class="callout">
+  <strong>Phase 3 lesson:</strong> the original SHACL <code>DeckShape</code> required
+  exactly 99–100 cards (Commander format). When we added Modern (60+ cards), it broke.
+  The fix wasn't to add format-detection logic to the shape — it was to <strong>split
+  into focused shapes</strong>: a general <code>DeckShape</code> (any deck must declare its source),
+  a specific <code>CommanderDeckShape</code> (99–100 cards), and
+  <code>ConstructedDeckShape</code> (60+ cards). Each is independently enabled.
+</aside>
+
+<!-- ========================================================== -->
+<h2 id="architecture">Architecture at a glance</h2>
+
+<div class="arch">
+  <div class="box full">
+    <h5>External sources</h5>
+    <ul>
+      <li><strong>Scryfall</strong> — bulk card data (~250 MB JSON download, refreshed weekly)</li>
+      <li><strong>EDHREC</strong> — popularity (inclusion %, synergy score) per commander</li>
+      <li><strong>EDHTop16</strong> — GraphQL: commander aggregate stats + entry-level tournament data</li>
+      <li><strong>TopDeck.gg</strong> — REST: multi-format tournament data (EDH, Modern, Legacy, …)</li>
+    </ul>
+  </div>
+
+  <div class="box">
+    <h5>MtgDeckEngine.Ingestion</h5>
+    <ul>
+      <li><code>ScryfallBulkCache</code></li>
+      <li><code>CommanderIngestor</code></li>
+      <li><code>EdhTop16Ingestor</code></li>
+      <li><code>TopDeckIngestor</code></li>
+      <li>Mappers → RDF triples</li>
+    </ul>
+  </div>
+  <div class="box">
+    <h5>MtgDeckEngine.Graph</h5>
+    <ul>
+      <li><code>IGraphRepository</code></li>
+      <li><code>FusekiGraphRepository</code> (Fuseki + Neptune)</li>
+      <li><code>InMemoryGraphRepository</code> (tests)</li>
+      <li><code>ShaclValidator</code></li>
+      <li><code>DeckRecommendationService</code></li>
+      <li><code>FormatService</code></li>
+    </ul>
+  </div>
+  <div class="box">
+    <h5>MtgDeckEngine.Api</h5>
+    <ul>
+      <li><code>/health</code></li>
+      <li><code>/api/commanders/{slug}/recommendations</code></li>
+      <li><code>/api/commanders/{slug}/meta</code></li>
+      <li><code>/api/commanders/{slug}/build-deck</code></li>
+      <li><code>/api/formats</code> · <code>/formats/{f}/meta</code> · <code>/staples</code></li>
+      <li><code>POST /api/commanders/{slug}/ai/suggest</code></li>
+    </ul>
+  </div>
+
+  <div class="box full" style="background:linear-gradient(180deg,rgba(110,231,255,0.12),rgba(196,181,253,0.08))">
+    <h5>Triplestore (the source of truth)</h5>
+    <ul>
+      <li>Local dev: <strong>Apache Jena Fuseki</strong> in Docker (TDB2 on-disk store)</li>
+      <li>Production: <strong>Amazon Neptune</strong> — same SPARQL 1.1 wire protocol</li>
+      <li>Same <code>IGraphRepository</code> implementation against both — only endpoint URLs change</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ========================================================== -->
+<h2 id="sources">How each source becomes triples</h2>
+
+<table>
+  <thead>
+    <tr><th>Source</th><th>Auth</th><th>Form</th><th>What we extract</th><th>Where it lands</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="mono">Scryfall</td>
+      <td><span class="pill">none</span></td>
+      <td>Bulk JSON download (~250 MB)</td>
+      <td>oracle_id, name, colors, type_line, prices.{eur,usd}, legalities.commander</td>
+      <td>Default graph (global card facts)</td>
+    </tr>
+    <tr>
+      <td class="mono">EDHREC</td>
+      <td><span class="pill">none</span></td>
+      <td>Per-commander JSON page</td>
+      <td>inclusion % (computed from num_decks / potential_decks), synergy, category</td>
+      <td>Named graph per commander (<code>mtg:context/&lt;slug&gt;</code>)</td>
+    </tr>
+    <tr>
+      <td class="mono">EDHTop16</td>
+      <td><span class="pill">none</span></td>
+      <td>GraphQL</td>
+      <td>Commander aggregate stats + per-entry standing/wins/decklist (joined by oracleId)</td>
+      <td>Default graph (tournament facts)</td>
+    </tr>
+    <tr>
+      <td class="mono">TopDeck.gg</td>
+      <td><span class="pill amber">API key</span></td>
+      <td>REST</td>
+      <td>Any format (EDH, Modern, …) with full decklists + win/loss + standings</td>
+      <td>Default graph, with <code>mtg:hasFormat</code> on each tournament + deck</td>
+    </tr>
+    <tr>
+      <td class="mono">Anthropic Claude</td>
+      <td><span class="pill amber">API key</span></td>
+      <td>Messages API (prompt-cached)</td>
+      <td>Natural-language deck suggestions, grounded in graph context</td>
+      <td>Not persisted — used in <code>POST /api/.../ai/suggest</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<aside class="callout">
+  <strong>Why "joined by oracleId" matters.</strong> Scryfall, EDHTop16, and the
+  Scryfall bulk cache all expose <code>oracle_id</code>. Because we URL-key cards by
+  oracleId (<code>mtg:card/&lt;oracle_id&gt;</code>), tournament decks reference the
+  exact same node as the global card facts. No string-matching, no fuzzy resolution.
+  The triplestore handles the join.
+</aside>
+
+<!-- ========================================================== -->
+<h2 id="journey">The phase-by-phase journey</h2>
+
+<div class="timeline">
+
+  <div class="step done">
+    <h3>Phase 1 — MVP</h3>
+    <p>EDHREC + Scryfall ingestion, ontology, SHACL shapes,
+    <code>GET /api/commanders/{slug}/recommendations</code> with price &amp; inclusion filters,
+    budget deck builder. 4 unit tests. Proved the loop end-to-end.</p>
+  </div>
+
+  <div class="step done">
+    <h3>Phase 2 — Tournament signals (EDHTop16)</h3>
+    <p>GraphQL ingestion of tournament data. New <code>/api/commanders/{slug}/meta</code>
+    endpoint. <code>/recommendations</code> gains <code>source</code>,
+    <code>maxPlacement</code>, <code>minTopCutAppearances</code> filters. Bugs found by
+    going live (and fixed): commander-name slug lookup, HttpClient BaseAddress quirk,
+    Content-Type strictness, GraphQL field-name drift. 4 new tests.</p>
+  </div>
+
+  <div class="step done">
+    <h3>Phase 3 — Multi-format (TopDeck.gg)</h3>
+    <p>One REST API covering EDH + Modern + Legacy + Pioneer + Standard + Pauper + ….
+    Generalised <code>mtg:hasFormat</code> so it works on both Tournament and Deck.
+    Refactored SHACL into focused per-format shapes. Feature-flagged behind a free
+    API key.</p>
+  </div>
+
+  <div class="step done">
+    <h3>Phase 4 — Format endpoints + smarter builder + AI</h3>
+    <p><code>/api/formats</code>, <code>/api/formats/{format}/meta</code>,
+    <code>/api/formats/{format}/staples</code>, <code>/api/commanders</code> (list).
+    Replaced naive greedy deck builder with a quota-aware two-pass build that respects
+    Commander format conventions (37 lands / 10 ramp / 10 draw / 8 removal / 20 creatures
+    / 14 other). New <code>MtgDeckEngine.Ai</code> project: Anthropic-backed
+    <code>POST /api/commanders/{slug}/ai/suggest</code> with prompt caching on
+    the graph-context block.</p>
+  </div>
+
+  <div class="step done">
+    <h3>Phase 5 — AWS deployment</h3>
+    <p>Documented <code>FusekiGraphRepository</code>'s drop-in compatibility with
+    Neptune (same SPARQL 1.1 wire protocol). Added <code>k8s/</code> (Kustomize base
+    + dev/prod overlays) and <code>deploy/helm/mtg-deck-engine</code> (Helm chart with
+    IRSA, ConfigMap, Secret, HPA, Ingress, nightly CronJob). Added
+    <code>terraform/</code> with modules for Neptune + envs for VPC/EKS/Neptune/IRSA.
+    Ready to <code>terraform apply</code> + <code>helm install</code>.</p>
+  </div>
+
+</div>
+
+<!-- ========================================================== -->
+<h2 id="stack">Tech stack</h2>
+
+<div class="grid cols-3">
+  <div class="card">
+    <h4>Runtime &amp; framework</h4>
+    <ul>
+      <li>.NET 10 / ASP.NET Core 10</li>
+      <li>xUnit (15 unit tests, all green)</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4>RDF &amp; triplestore</h4>
+    <ul>
+      <li><a href="https://www.dotnetrdf.org/">dotNetRDF</a> 3.5 (Leviathan in-memory SPARQL + SHACL)</li>
+      <li>Apache Jena Fuseki 5.1 (local, Docker)</li>
+      <li>Amazon Neptune (production)</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4>HTTP &amp; data</h4>
+    <ul>
+      <li><code>HttpClient</code> via <code>IHttpClientFactory</code></li>
+      <li>System.Text.Json (web defaults)</li>
+      <li>Scryfall bulk cache (~250 MB JSON, on-disk, 7-day TTL)</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4>AI integration</h4>
+    <ul>
+      <li>Anthropic Messages API, called directly via HttpClient</li>
+      <li>Prompt caching on graph-context block</li>
+      <li>Default model: <code>claude-sonnet-4-6</code></li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4>Infrastructure</h4>
+    <ul>
+      <li>Docker + docker-compose (local)</li>
+      <li>Kubernetes (EKS) + Helm + Kustomize</li>
+      <li>Terraform (VPC + EKS + Neptune + IRSA)</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4>Dev tooling</h4>
+    <ul>
+      <li>Zed tasks (<code>.zed/tasks.json</code>) — one-keystroke SPARQL runs</li>
+      <li>17 versioned SPARQL queries in <code>queries/</code></li>
+      <li><code>bin/sparql</code> runner script</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ========================================================== -->
+<h2 id="aws">AWS deployment in one screen</h2>
+
+<pre><code><span class="com"># 1. Provision the infrastructure</span>
+cd terraform/envs/dev
+terraform init
+terraform apply
+
+<span class="com"># 2. Point kubectl at the new EKS cluster</span>
+aws eks update-kubeconfig --name mtg-deck-engine-dev
+
+<span class="com"># 3. Install the AWS Load Balancer Controller (one-time per cluster)</span>
+helm repo add eks https://aws.github.io/eks-charts
+helm install aws-lb-controller eks/aws-load-balancer-controller \
+  --namespace kube-system \
+  --set clusterName=mtg-deck-engine-dev \
+  --set serviceAccount.create=true
+
+<span class="com"># 4. Deploy the app</span>
+helm install mtg deploy/helm/mtg-deck-engine \
+  --namespace mtg-deck-engine --create-namespace \
+  --set serviceAccount.irsaRoleArn=$(terraform -chdir=terraform/envs/dev output -raw irsa_role_arn) \
+  --set sparql.queryEndpoint=https://$(terraform -chdir=terraform/envs/dev output -raw neptune_endpoint):8182/sparql \
+  --set sparql.updateEndpoint=https://$(terraform -chdir=terraform/envs/dev output -raw neptune_endpoint):8182/sparql \
+  --set-string secrets.topdeckApiKey=$TOPDECK_API_KEY</code></pre>
+
+<aside class="callout">
+  <strong>Why no code change to swap Fuseki → Neptune?</strong> Both speak SPARQL 1.1
+  over HTTP — the wire-level standard. <code>FusekiGraphRepository</code> only knows about
+  POSTing SPARQL to a URL and reading JSON results back. Whether that URL is
+  <code>localhost:3030/mtg/sparql</code> or
+  <code>cluster.us-east-1.neptune.amazonaws.com:8182/sparql</code> doesn't matter to the
+  code. <em>This is the value of writing against a standard.</em>
+</aside>
+
+<!-- ========================================================== -->
+<h2 id="try">Try it locally</h2>
+
+<pre><code><span class="com"># 1. Boot Fuseki</span>
+docker compose up -d fuseki
+
+<span class="com"># 2. Run the API — kicks off ingestion automatically</span>
+dotnet run --project src/MtgDeckEngine.Api
+
+<span class="com"># 3. Once you see "Startup ingestion complete." in the logs:</span>
+curl -s 'http://localhost:5050/api/commanders/xyris-the-writhing-storm/recommendations?maxPriceEur=5&amp;limit=10' | jq
+
+<span class="com"># 4. Or with tournament weighting (Phase 2):</span>
+curl -s 'http://localhost:5050/api/commanders/xyris-the-writhing-storm/recommendations?source=Tournament&amp;maxPlacement=4&amp;maxPriceEur=5&amp;limit=15' | jq
+
+<span class="com"># 5. Or all formats (Phase 3):</span>
+curl -s 'http://localhost:5050/api/formats' | jq
+
+<span class="com"># 6. Run any of the 18 versioned SPARQL queries:</span>
+./bin/sparql queries/14-top-cards-in-top4.sparql</code></pre>
+
+<h3>Or open <code>http://localhost:3030</code> for the Fuseki UI and explore:</h3>
+
+<pre><code><span class="kw">PREFIX</span> mtg: <span class="uri">&lt;http://example.org/mtg#&gt;</span>
+<span class="kw">SELECT</span> <span class="var">?name</span> <span class="var">?inc</span> <span class="var">?priceEur</span> <span class="kw">WHERE</span> {
+  <span class="kw">GRAPH</span> <span class="uri">&lt;http://example.org/mtg#context/xyris-the-writhing-storm&gt;</span> {
+    <span class="var">?card</span> mtg:hasInclusionPct <span class="var">?inc</span>
+  }
+  <span class="var">?card</span> mtg:hasName <span class="var">?name</span> .
+  <span class="kw">OPTIONAL</span> { <span class="var">?card</span> mtg:hasPriceEur <span class="var">?priceEur</span> }
+}
+<span class="kw">ORDER BY</span> <span class="kw">DESC</span>(<span class="var">?inc</span>)
+<span class="kw">LIMIT</span> <span class="lit">25</span></code></pre>
+
+<footer>
+  Built as a portfolio piece exercising the RDF / OWL / SHACL / SPARQL / .NET / AWS stack.
+  Tournament data attributed to <a href="https://topdeck.gg">TopDeck.gg</a>, EDHTop16,
+  and EDHREC. Card data from <a href="https://scryfall.com">Scryfall</a>.
+</footer>
+
+</div>
+</body>
+</html>
