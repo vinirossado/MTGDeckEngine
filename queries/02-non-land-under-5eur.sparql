@@ -1,0 +1,16 @@
+PREFIX mtg: <http://example.org/mtg#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?name ?category ?inc ?priceEur WHERE {
+  GRAPH <http://example.org/mtg#context/xyris-the-writhing-storm> {
+    ?card mtg:hasInclusionPct ?inc .
+    OPTIONAL { ?card mtg:inCategory ?cat . ?cat rdfs:label ?category }
+  }
+  ?card mtg:hasName ?name ;
+        mtg:hasTypeLine ?typeLine .
+  OPTIONAL { ?card mtg:hasPriceEur ?priceEur }
+  FILTER (!CONTAINS(?typeLine, "Land"))
+  FILTER (!BOUND(?priceEur) || ?priceEur <= 5.0)
+}
+ORDER BY DESC(?inc)
+LIMIT 25

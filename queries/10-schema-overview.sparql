@@ -1,0 +1,12 @@
+PREFIX mtg: <http://example.org/mtg#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX owl: <http://www.w3.org/2002/07/owl#>
+
+# Every class declared in the ontology, with its label. Run this whenever
+# you load a new dataset and want a quick "what's in the schema?" answer.
+SELECT ?class ?label WHERE {
+  ?class a owl:Class .
+  OPTIONAL { ?class rdfs:label ?label }
+}
+ORDER BY ?class

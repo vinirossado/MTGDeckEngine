@@ -1,0 +1,19 @@
+PREFIX mtg: <http://example.org/mtg#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?oracleId ?name ?categoryLabel ?inclusion ?synergy ?priceEur
+WHERE {
+  GRAPH ?ctx {
+    ?card mtg:hasInclusionPct ?inclusion .
+    OPTIONAL { ?card mtg:hasSynergyScore ?synergy }
+    OPTIONAL { ?card mtg:inCategory ?cat . ?cat rdfs:label ?categoryLabel }
+  }
+  ?card mtg:hasOracleId ?oracleId ;
+        mtg:hasName     ?name .
+  OPTIONAL { ?card mtg:hasPriceEur ?priceEur }
+  FILTER (?ctx = @ctx)
+  FILTER (!BOUND(?priceEur) || ?priceEur <= @maxPrice)
+  FILTER (?inclusion >= @minInclusion)
+}
+ORDER BY DESC(?inclusion) DESC(?synergy)
+LIMIT @limit

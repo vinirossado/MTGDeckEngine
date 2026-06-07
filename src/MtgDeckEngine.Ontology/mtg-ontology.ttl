@@ -1,0 +1,96 @@
+@prefix mtg:  <http://example.org/mtg#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+<http://example.org/mtg> a owl:Ontology ;
+    rdfs:label "MTG Deck Intelligence Ontology" ;
+    rdfs:comment "Schema for cards, decks, commanders, tournaments and EDH metadata." .
+
+#################################################################
+# Classes
+#################################################################
+
+mtg:Card            a owl:Class ; rdfs:label "Card" .
+mtg:Commander       a owl:Class ; rdfs:label "Commander" ; rdfs:subClassOf mtg:Card .
+mtg:Deck            a owl:Class ; rdfs:label "Deck" .
+mtg:Tournament      a owl:Class ; rdfs:label "Tournament" .
+mtg:TournamentEntry a owl:Class ; rdfs:label "TournamentEntry" .
+mtg:Color           a owl:Class ; rdfs:label "Color" .
+mtg:Category        a owl:Class ; rdfs:label "Category" .
+
+#################################################################
+# Color individuals
+#################################################################
+
+<http://example.org/mtg#color/W> a mtg:Color ; rdfs:label "White" .
+<http://example.org/mtg#color/U> a mtg:Color ; rdfs:label "Blue"  .
+<http://example.org/mtg#color/B> a mtg:Color ; rdfs:label "Black" .
+<http://example.org/mtg#color/R> a mtg:Color ; rdfs:label "Red"   .
+<http://example.org/mtg#color/G> a mtg:Color ; rdfs:label "Green" .
+<http://example.org/mtg#color/C> a mtg:Color ; rdfs:label "Colorless" .
+
+#################################################################
+# Common category individuals (additive — add more as ingestion discovers them)
+#################################################################
+
+<http://example.org/mtg#category/ramp>     a mtg:Category ; rdfs:label "Ramp" .
+<http://example.org/mtg#category/draw>     a mtg:Category ; rdfs:label "Card Draw" .
+<http://example.org/mtg#category/removal>  a mtg:Category ; rdfs:label "Removal" .
+<http://example.org/mtg#category/wheel>    a mtg:Category ; rdfs:label "Wheel" .
+<http://example.org/mtg#category/token>    a mtg:Category ; rdfs:label "Token" .
+<http://example.org/mtg#category/land>     a mtg:Category ; rdfs:label "Land" .
+<http://example.org/mtg#category/creature> a mtg:Category ; rdfs:label "Creature" .
+
+#################################################################
+# Card properties
+#################################################################
+
+mtg:hasName            a owl:DatatypeProperty ; rdfs:range xsd:string .
+mtg:hasOracleId        a owl:DatatypeProperty ; rdfs:domain mtg:Card ; rdfs:range xsd:string .
+mtg:hasColor           a owl:ObjectProperty   ; rdfs:domain mtg:Card ; rdfs:range mtg:Color .
+mtg:hasColorIdentity   a owl:ObjectProperty   ; rdfs:domain mtg:Card ; rdfs:range mtg:Color .
+mtg:hasTypeLine        a owl:DatatypeProperty ; rdfs:domain mtg:Card ; rdfs:range xsd:string .
+mtg:hasOracleText      a owl:DatatypeProperty ; rdfs:domain mtg:Card ; rdfs:range xsd:string .
+mtg:hasPriceEur        a owl:DatatypeProperty ; rdfs:domain mtg:Card ; rdfs:range xsd:decimal .
+mtg:hasPriceUsd        a owl:DatatypeProperty ; rdfs:domain mtg:Card ; rdfs:range xsd:decimal .
+mtg:isCommanderLegal   a owl:DatatypeProperty ; rdfs:domain mtg:Card ; rdfs:range xsd:boolean .
+mtg:inCategory         a owl:ObjectProperty   ; rdfs:domain mtg:Card ; rdfs:range mtg:Category .
+
+# EDHREC-derived, commander-scoped (placed inside a named graph per commander)
+mtg:hasInclusionPct    a owl:DatatypeProperty ; rdfs:range xsd:decimal .
+mtg:hasSynergyScore    a owl:DatatypeProperty ; rdfs:range xsd:decimal .
+mtg:hasNumDecks        a owl:DatatypeProperty ; rdfs:range xsd:integer .
+mtg:hasPotentialDecks  a owl:DatatypeProperty ; rdfs:range xsd:integer .
+mtg:forCommander       a owl:ObjectProperty   ; rdfs:range mtg:Commander .
+
+#################################################################
+# Deck properties
+#################################################################
+
+mtg:containsCard       a owl:ObjectProperty   ; rdfs:domain mtg:Deck ; rdfs:range mtg:Card .
+mtg:hasCommander       a owl:ObjectProperty   ; rdfs:domain mtg:Deck ; rdfs:range mtg:Commander .
+mtg:hasSource          a owl:DatatypeProperty ; rdfs:range xsd:string .
+mtg:hasTotalPriceEur   a owl:DatatypeProperty ; rdfs:domain mtg:Deck ; rdfs:range xsd:decimal .
+
+#################################################################
+# Tournament properties
+#################################################################
+
+mtg:hasDate            a owl:DatatypeProperty ; rdfs:domain mtg:Tournament ; rdfs:range xsd:date .
+mtg:hasPlayerCount     a owl:DatatypeProperty ; rdfs:domain mtg:Tournament ; rdfs:range xsd:integer .
+mtg:hasFormat          a owl:DatatypeProperty ; rdfs:domain mtg:Tournament ; rdfs:range xsd:string .
+
+#################################################################
+# TournamentEntry properties
+#################################################################
+
+mtg:inTournament       a owl:ObjectProperty   ; rdfs:domain mtg:TournamentEntry ; rdfs:range mtg:Tournament .
+mtg:hasDeck            a owl:ObjectProperty   ; rdfs:domain mtg:TournamentEntry ; rdfs:range mtg:Deck .
+mtg:hasPlacement       a owl:DatatypeProperty ; rdfs:domain mtg:TournamentEntry ; rdfs:range xsd:integer .
+mtg:hasWinsSwiss       a owl:DatatypeProperty ; rdfs:domain mtg:TournamentEntry ; rdfs:range xsd:integer .
+mtg:hasLossesSwiss     a owl:DatatypeProperty ; rdfs:domain mtg:TournamentEntry ; rdfs:range xsd:integer .
+mtg:hasWinsBracket     a owl:DatatypeProperty ; rdfs:domain mtg:TournamentEntry ; rdfs:range xsd:integer .
+mtg:hasLossesBracket   a owl:DatatypeProperty ; rdfs:domain mtg:TournamentEntry ; rdfs:range xsd:integer .
+mtg:hasPilotName       a owl:DatatypeProperty ; rdfs:domain mtg:TournamentEntry ; rdfs:range xsd:string .

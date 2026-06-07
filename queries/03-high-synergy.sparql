@@ -1,0 +1,15 @@
+PREFIX mtg: <http://example.org/mtg#>
+
+# Cards strongly tied to the commander archetype: high synergy ⇒ much more
+# common in *this* commander's decks than in the meta as a whole.
+SELECT ?name ?syn ?inc ?priceEur WHERE {
+  GRAPH <http://example.org/mtg#context/xyris-the-writhing-storm> {
+    ?card mtg:hasSynergyScore ?syn ;
+          mtg:hasInclusionPct ?inc .
+  }
+  ?card mtg:hasName ?name .
+  OPTIONAL { ?card mtg:hasPriceEur ?priceEur }
+  FILTER (?syn > 0.5)
+}
+ORDER BY DESC(?syn)
+LIMIT 25

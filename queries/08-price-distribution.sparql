@@ -1,0 +1,19 @@
+PREFIX mtg: <http://example.org/mtg#>
+
+# Bucket cards by price band so you can see where the budget lands.
+# Useful for planning a build: "how many sub-€1 staples vs. how many €20+ ones?".
+SELECT ?band (COUNT(?card) AS ?cards) WHERE {
+  GRAPH <http://example.org/mtg#context/xyris-the-writhing-storm> {
+    ?card mtg:hasInclusionPct ?inc .
+  }
+  ?card mtg:hasPriceEur ?price .
+  BIND (
+    IF (?price < 1, "01_under_1eur",
+    IF (?price < 5, "02_1_to_5eur",
+    IF (?price < 10, "03_5_to_10eur",
+    IF (?price < 20, "04_10_to_20eur",
+                     "05_20eur_plus")))) AS ?band
+  )
+}
+GROUP BY ?band
+ORDER BY ?band

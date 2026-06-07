@@ -1,0 +1,19 @@
+PREFIX mtg: <http://example.org/mtg#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+# Given an expensive card (Wheel of Fortune here), find cheaper alternatives
+# in the same EDHREC category. Swap the FILTER name to try other staples.
+SELECT ?altName ?altPrice ?altInc WHERE {
+  GRAPH <http://example.org/mtg#context/xyris-the-writhing-storm> {
+    ?expensive mtg:inCategory ?cat .
+    ?altCard   mtg:inCategory ?cat ;
+               mtg:hasInclusionPct ?altInc .
+  }
+  ?expensive mtg:hasName "Wheel of Fortune" .
+  ?altCard   mtg:hasName ?altName ;
+             mtg:hasPriceEur ?altPrice .
+  FILTER (?altCard != ?expensive)
+  FILTER (?altPrice <= 5.0)
+}
+ORDER BY DESC(?altInc)
+LIMIT 10

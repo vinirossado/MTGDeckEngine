@@ -1,0 +1,50 @@
+// Project tasks for Zed. Run via Cmd-Shift-P → "task: spawn" or bind a key
+// in keymap.json:
+//   { "context": "Workspace", "bindings": { "cmd-r": ["task::Spawn", { "task_name": "Run SPARQL" }] } }
+[
+  {
+    "label": "Run SPARQL: active file",
+    "command": "./bin/sparql",
+    "args": ["${ZED_FILE}"],
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+    "tags": ["sparql"]
+  },
+  {
+    "label": "Count triples",
+    "command": "./bin/sparql",
+    "args": ["queries/00-count-triples.sparql"],
+    "use_new_terminal": false
+  },
+  {
+    "label": "Top cards by inclusion",
+    "command": "./bin/sparql",
+    "args": ["queries/01-top-by-inclusion.sparql"],
+    "use_new_terminal": false
+  },
+  {
+    "label": "API: Xyris recommendations (under €5, no basics)",
+    "command": "curl",
+    "args": [
+      "-s",
+      "http://localhost:5050/api/commanders/xyris-the-writhing-storm/recommendations?maxPriceEur=5&excludeBasicLands=true&limit=15"
+    ],
+    "use_new_terminal": false
+  },
+  {
+    "label": "API: Build €100 Xyris deck",
+    "command": "curl",
+    "args": [
+      "-s",
+      "http://localhost:5050/api/commanders/xyris-the-writhing-storm/build-deck?totalBudgetEur=100&maxCardPriceEur=15"
+    ],
+    "use_new_terminal": false
+  },
+  {
+    "label": "Restart API",
+    "command": "dotnet",
+    "args": ["run", "--project", "src/MtgDeckEngine.Api"],
+    "use_new_terminal": true
+  }
+]

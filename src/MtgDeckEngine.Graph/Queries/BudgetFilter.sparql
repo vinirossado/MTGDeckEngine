@@ -1,0 +1,11 @@
+PREFIX mtg: <http://example.org/mtg#>
+
+SELECT ?oracleId ?name ?priceEur WHERE {
+  ?card a mtg:Card ;
+        mtg:hasOracleId ?oracleId ;
+        mtg:hasName ?name ;
+        mtg:hasPriceEur ?priceEur .
+  FILTER (?priceEur <= @maxPrice)
+}
+ORDER BY ?priceEur
+LIMIT @limit

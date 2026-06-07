@@ -1,0 +1,9 @@
+PREFIX mtg: <http://example.org/mtg#>
+
+# Full triple dump for a single card. Edit the FILTER value to inspect
+# any card. Handy when sanity-checking ingestion or building new queries.
+SELECT ?p ?o WHERE {
+  ?card mtg:hasName "Windfall" .
+  ?card ?p ?o .
+}
+ORDER BY ?p

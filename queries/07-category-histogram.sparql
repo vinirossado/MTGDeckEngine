@@ -1,0 +1,13 @@
+PREFIX mtg: <http://example.org/mtg#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+# How many cards EDHREC lists in each category for this commander.
+# Gives you the shape of the archetype at a glance.
+SELECT ?category (COUNT(?card) AS ?cards) WHERE {
+  GRAPH <http://example.org/mtg#context/xyris-the-writhing-storm> {
+    ?card mtg:inCategory ?cat .
+    ?cat  rdfs:label ?category .
+  }
+}
+GROUP BY ?category
+ORDER BY DESC(?cards)

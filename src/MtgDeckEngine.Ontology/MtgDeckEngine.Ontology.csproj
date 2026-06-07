@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="mtg-ontology.ttl" />
+    <EmbeddedResource Include="mtg-shapes.ttl" />
+    <EmbeddedResource Include="bootstrap\seed-xyris.ttl" />
+  </ItemGroup>
+
+</Project>

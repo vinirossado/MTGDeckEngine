@@ -1,0 +1,4 @@
+# What named graphs exist in this dataset? Useful when adding commanders.
+SELECT DISTINCT ?graph WHERE {
+  GRAPH ?graph { ?s ?p ?o }
+}

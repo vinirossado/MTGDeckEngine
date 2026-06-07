@@ -1,0 +1,15 @@
+PREFIX mtg: <http://example.org/mtg#>
+
+# "Expensive but heavily played" — possible budget pain points to plan around.
+# Pair with 06-swap-suggestions.sparql to find replacements for each one.
+SELECT ?name ?inc ?priceEur WHERE {
+  GRAPH <http://example.org/mtg#context/xyris-the-writhing-storm> {
+    ?card mtg:hasInclusionPct ?inc .
+  }
+  ?card mtg:hasName ?name ;
+        mtg:hasPriceEur ?priceEur .
+  FILTER (?priceEur >= 15.0)
+  FILTER (?inc >= 30.0)
+}
+ORDER BY DESC(?inc)
+LIMIT 25

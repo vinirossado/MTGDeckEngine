@@ -1,0 +1,17 @@
+PREFIX mtg: <http://example.org/mtg#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+# Filter by EDHREC category (change the label below).
+# Useful labels for Xyris: "Card Draw", "Ramp", "Mana Artifacts",
+# "High Synergy Cards", "Top Cards", "Lands", "Utility Lands".
+SELECT ?name ?inc ?priceEur WHERE {
+  GRAPH <http://example.org/mtg#context/xyris-the-writhing-storm> {
+    ?card mtg:hasInclusionPct ?inc ;
+          mtg:inCategory ?cat .
+    ?cat rdfs:label "Card Draw" .
+  }
+  ?card mtg:hasName ?name .
+  OPTIONAL { ?card mtg:hasPriceEur ?priceEur }
+}
+ORDER BY DESC(?inc)
+LIMIT 20

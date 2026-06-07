@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Graph Explorer — Layout Options</title>
+<style>
+  :root {
+    --bg: #0f172a;          /* slate-900 */
+    --panel: #1e293b;       /* slate-800 */
+    --panel-2: #334155;     /* slate-700 */
+    --border: #475569;      /* slate-600 */
+    --text: #e2e8f0;        /* slate-200 */
+    --muted: #94a3b8;       /* slate-400 */
+    --accent: #38bdf8;      /* sky-400 */
+    --accent-2: #a78bfa;    /* violet-400 */
+    --ok: #4ade80;          /* green-400 */
+    --warn: #fbbf24;        /* amber-400 */
+    --link: #60a5fa;        /* blue-400 */
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #020617; color: var(--text);
+    font-family: -apple-system, system-ui, "Segoe UI", Inter, sans-serif; }
+  header { padding: 32px 48px 16px; border-bottom: 1px solid var(--border); }
+  header h1 { margin: 0 0 8px; font-weight: 600; font-size: 28px; }
+  header p { margin: 0; color: var(--muted); max-width: 720px; line-height: 1.5; }
+  main { padding: 32px 48px; max-width: 1400px; margin: 0 auto; }
+  .layout-card { margin-bottom: 48px; }
+  .layout-card h2 { font-size: 20px; margin: 0 0 6px; display: flex; align-items: center; gap: 12px; }
+  .tag { font-size: 11px; padding: 3px 8px; border-radius: 12px; font-weight: 500;
+    text-transform: uppercase; letter-spacing: 0.5px; }
+  .tag.rec { background: rgba(74, 222, 128, 0.15); color: var(--ok); }
+  .layout-card p.tagline { color: var(--muted); margin: 0 0 16px; font-size: 14px; }
+  .frame { background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
+  .titlebar { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    background: var(--panel); border-bottom: 1px solid var(--border); font-size: 12px; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .dot.r { background: #ef4444; } .dot.y { background: #eab308; } .dot.g { background: #22c55e; }
+  .titlebar .where { margin-left: 12px; color: var(--muted); font-family: ui-monospace, monospace; }
+  .pros-cons { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;
+    font-size: 13px; }
+  .pros, .cons { padding: 12px 14px; border-radius: 6px; line-height: 1.5; }
+  .pros { background: rgba(74, 222, 128, 0.08); border-left: 3px solid var(--ok); }
+  .cons { background: rgba(251, 191, 36, 0.08); border-left: 3px solid var(--warn); }
+  .pros strong, .cons strong { display: block; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.5px; margin-bottom: 6px; color: var(--muted); }
+  .pros ul, .cons ul { margin: 0; padding-left: 18px; }
+  .pros li, .cons li { margin-bottom: 4px; }
+
+  /* ---------- Shared UI primitives ---------- */
+  .panel { background: var(--panel); }
+  .panel-header { padding: 8px 12px; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--muted); border-bottom: 1px solid var(--border); }
+  .sidebar-item { padding: 4px 12px; font-size: 13px; cursor: pointer; display: flex;
+    align-items: center; gap: 6px; }
+  .sidebar-item:hover { background: var(--panel-2); }
+  .sidebar-item.indent { padding-left: 28px; color: var(--muted); }
+  .sidebar-item.class { color: var(--accent); }
+  .sidebar-item.prop  { color: var(--accent-2); }
+  .sparql { padding: 14px; font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 13px; line-height: 1.55; background: var(--bg); color: var(--text); }
+  .kw { color: #f472b6; }
+  .var { color: var(--accent); }
+  .uri { color: var(--warn); }
+  .lit { color: var(--ok); }
+  .com { color: var(--muted); font-style: italic; }
+  .results { background: var(--panel); padding: 0; font-size: 12px; }
+  .results table { width: 100%; border-collapse: collapse; }
+  .results th, .results td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border);
+    font-family: ui-monospace, monospace; }
+  .results th { background: var(--panel-2); font-weight: 500; color: var(--muted);
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .tabs { display: flex; gap: 1px; background: var(--border); padding: 0; }
+  .tab { padding: 6px 14px; background: var(--panel); cursor: pointer; font-size: 12px; }
+  .tab.active { background: var(--bg); color: var(--accent); border-bottom: 2px solid var(--accent); }
+  .badge { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: var(--panel-2);
+    color: var(--muted); margin-left: 6px; }
+  .run-btn { background: var(--accent); color: var(--bg); border: 0; padding: 4px 12px;
+    border-radius: 4px; font-size: 12px; font-weight: 500; cursor: pointer; }
+
+  /* ---------- Graph viz mock ---------- */
+  .graph-canvas { background:
+      radial-gradient(circle at 30% 40%, rgba(56,189,248,0.08), transparent 50%),
+      radial-gradient(circle at 70% 60%, rgba(167,139,250,0.08), transparent 50%),
+      var(--bg);
+    position: relative; overflow: hidden; }
+  .node { position: absolute; transform: translate(-50%, -50%);
+    padding: 6px 12px; border-radius: 16px; font-size: 12px; font-weight: 500;
+    border: 1px solid; cursor: pointer; }
+  .node.card { background: rgba(56,189,248,0.15); border-color: var(--accent); color: #e0f2fe; }
+  .node.commander { background: rgba(244,114,182,0.18); border-color: #f472b6; color: #fce7f3; }
+  .node.category { background: rgba(167,139,250,0.15); border-color: var(--accent-2); color: #ede9fe; }
+  .edge-label { position: absolute; transform: translate(-50%, -50%);
+    font-size: 10px; color: var(--muted); background: var(--bg); padding: 0 4px; }
+
+  /* ===================================================================== */
+  /* Layout 1: Studio (left schema · center editor+results · right details) */
+  /* ===================================================================== */
+  .layout-studio { display: grid; grid-template-columns: 240px 1fr 280px;
+    height: 520px; font-size: 13px; }
+  .layout-studio aside { background: var(--panel); border-right: 1px solid var(--border);
+    overflow: hidden; }
+  .layout-studio aside.right { border-right: 0; border-left: 1px solid var(--border); }
+  .layout-studio main { display: grid; grid-template-rows: auto 1fr auto 1fr; min-height: 0; }
+  .editor-toolbar { padding: 6px 10px; background: var(--panel);
+    border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+  .layout-studio .results-toolbar { padding: 6px 10px; background: var(--panel);
+    border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  .details-block { padding: 12px 14px; font-size: 12px; }
+  .details-block h4 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--muted); }
+  .details-block .kv { display: grid; grid-template-columns: 90px 1fr; gap: 4px 8px;
+    font-family: ui-monospace, monospace; line-height: 1.5; }
+  .details-block .kv span:nth-child(odd) { color: var(--muted); }
+
+  /* ===================================================================== */
+  /* Layout 2: Explorer (graph dominates, query slides down from top)      */
+  /* ===================================================================== */
+  .layout-explorer { display: grid; grid-template-rows: auto 1fr auto;
+    height: 520px; font-size: 13px; }
+  .explorer-query-bar { padding: 10px 16px; background: var(--panel);
+    border-bottom: 1px solid var(--border); display: grid;
+    grid-template-columns: 1fr auto; gap: 12px; align-items: center; }
+  .explorer-input { background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 12px; font-family: ui-monospace, monospace;
+    font-size: 12px; color: var(--text); }
+  .explorer-statusbar { padding: 6px 16px; background: var(--panel);
+    border-top: 1px solid var(--border); display: flex; gap: 16px;
+    font-size: 11px; color: var(--muted); }
+  .explorer-floating-panel { position: absolute; top: 16px; right: 16px; width: 260px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.4); padding: 12px; font-size: 12px; }
+
+  /* ===================================================================== */
+  /* Layout 3: Lessons (notebook-style cells with schema chip strip)       */
+  /* ===================================================================== */
+  .layout-lessons { display: grid; grid-template-columns: 220px 1fr;
+    height: 520px; font-size: 13px; }
+  .lessons-feed { padding: 16px; overflow: auto; background: var(--bg);
+    display: flex; flex-direction: column; gap: 16px; }
+  .cell { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    overflow: hidden; }
+  .cell-head { padding: 6px 12px; background: var(--panel-2); display: flex;
+    align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  .cell-body { padding: 12px; font-family: ui-monospace, monospace; font-size: 12px;
+    background: var(--bg); }
+  .cell-out { padding: 10px 12px; font-size: 12px; background: var(--panel);
+    border-top: 1px solid var(--border); }
+  .chip-strip { padding: 8px 12px; display: flex; gap: 6px; flex-wrap: wrap;
+    background: var(--panel); border-bottom: 1px solid var(--border); }
+  .chip { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px;
+    padding: 2px 10px; font-size: 11px; cursor: pointer; }
+  .chip:hover { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Graph Explorer — Layout Options</h1>
+  <p>Three takes on the same MVP scope (visual graph + faster SPARQL + schema browsing).
+  Same feature set, different priorities about which one dominates the screen.
+  Each mock uses the MTGDeckEngine Xyris dataset.</p>
+</header>
+
+<main>
+<!-- ====================================================================== -->
+<!-- LAYOUT 1: STUDIO                                                       -->
+<!-- ====================================================================== -->
+<section class="layout-card">
+  <h2>Layout A — “Studio” <span class="tag rec">recommended starting point</span></h2>
+  <p class="tagline">IDE-style. Schema browser left · editor+results center · click-to-inspect right.
+  Closest to what a daily SPARQL workflow looks like in DataGrip/Stardog Studio.</p>
+
+  <div class="frame">
+    <div class="titlebar">
+      <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+      <span class="where">localhost:3030/mtg/sparql · 2,519 triples · 1 named graph</span>
+    </div>
+    <div class="layout-studio">
+      <aside>
+        <div class="panel-header">Schema</div>
+        <div class="sidebar-item class">▾ Classes</div>
+        <div class="sidebar-item indent">Card <span class="badge">6,193</span></div>
+        <div class="sidebar-item indent">Commander <span class="badge">1</span></div>
+        <div class="sidebar-item indent">Deck <span class="badge">—</span></div>
+        <div class="sidebar-item indent">Category <span class="badge">12</span></div>
+        <div class="sidebar-item prop">▾ Properties</div>
+        <div class="sidebar-item indent">hasName</div>
+        <div class="sidebar-item indent">hasPriceEur</div>
+        <div class="sidebar-item indent">hasInclusionPct</div>
+        <div class="sidebar-item indent">inCategory</div>
+        <div class="sidebar-item indent">hasSynergyScore</div>
+        <div class="panel-header" style="margin-top:8px">Named Graphs</div>
+        <div class="sidebar-item indent">mtg:context/xyris…</div>
+      </aside>
+      <main>
+        <div class="editor-toolbar">
+          <button class="run-btn">▶ Run</button>
+          <span style="color:var(--muted); font-size:12px;">queries/03-high-synergy.sparql</span>
+          <span style="margin-left:auto; color:var(--muted); font-size:11px;">SPARQL · 11 lines</span>
+        </div>
+        <div class="sparql">
+<span class="kw">PREFIX</span> <span class="uri">mtg: &lt;http://example.org/mtg#&gt;</span>
+
+<span class="kw">SELECT</span> <span class="var">?name</span> <span class="var">?syn</span> <span class="var">?inc</span> <span class="var">?priceEur</span> <span class="kw">WHERE</span> {
+  <span class="kw">GRAPH</span> <span class="uri">&lt;http://example.org/mtg#context/xyris-the-writhing-storm&gt;</span> {
+    <span class="var">?card</span> mtg:hasSynergyScore <span class="var">?syn</span> ;
+          mtg:hasInclusionPct <span class="var">?inc</span> .
+  }
+  <span class="var">?card</span> mtg:hasName <span class="var">?name</span> .
+  <span class="kw">OPTIONAL</span> { <span class="var">?card</span> mtg:hasPriceEur <span class="var">?priceEur</span> }
+  <span class="kw">FILTER</span> (<span class="var">?syn</span> &gt; <span class="lit">0.5</span>)
+} <span class="kw">ORDER BY</span> <span class="kw">DESC</span>(<span class="var">?syn</span>) <span class="kw">LIMIT</span> <span class="lit">25</span></div>
+        <div class="results-toolbar">
+          <div class="tabs">
+            <div class="tab active">Table</div>
+            <div class="tab">Graph</div>
+            <div class="tab">JSON</div>
+          </div>
+          <span style="margin-left:auto">2 rows · 47 ms</span>
+        </div>
+        <div class="results">
+          <table>
+            <thead><tr><th>name</th><th>syn</th><th>inc</th><th>priceEur</th></tr></thead>
+            <tbody>
+              <tr><td>Impact Tremors</td><td>0.60</td><td>66.83</td><td>2.62</td></tr>
+              <tr><td>Windfall</td><td>0.54</td><td>63.10</td><td>4.88</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </main>
+      <aside class="right">
+        <div class="panel-header">Selection · Windfall</div>
+        <div class="details-block">
+          <h4>URI</h4>
+          <div style="font-family:ui-monospace,monospace; font-size:11px; color:var(--accent); word-break:break-all;">mtg:card/08becc07-…</div>
+        </div>
+        <div class="details-block">
+          <h4>Triples (10)</h4>
+          <div class="kv">
+            <span>type</span><span>mtg:Card</span>
+            <span>hasName</span><span>"Windfall"</span>
+            <span>priceEur</span><span>4.88</span>
+            <span>hasColor</span><span>color/U</span>
+            <span>inCategory</span><span>High Synergy</span>
+            <span>synergy</span><span>0.54</span>
+            <span>inclusion</span><span>63.10</span>
+          </div>
+        </div>
+        <div class="details-block">
+          <h4>Suggested Queries</h4>
+          <div style="line-height:1.6">
+            <a href="#" style="color:var(--link);">→ Show neighbours</a><br>
+            <a href="#" style="color:var(--link);">→ Cards in same category</a><br>
+            <a href="#" style="color:var(--link);">→ Cheaper alternatives</a>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <div class="pros-cons">
+    <div class="pros"><strong>Pros</strong><ul>
+      <li>Familiar to anyone who's used DataGrip/IntelliJ/VS Code</li>
+      <li>Schema sidebar drives both autocomplete and exploration</li>
+      <li>"Click row → see details" is the killer feature for learning</li>
+      <li>Graph view as a results tab — opt-in, not in your face</li>
+    </ul></div>
+    <div class="cons"><strong>Cons</strong><ul>
+      <li>Most ambitious to build (three panels + tabs + viz)</li>
+      <li>Graph view is hidden behind a tab; visualization isn't the hero</li>
+    </ul></div>
+  </div>
+</section>
+
+<!-- ====================================================================== -->
+<!-- LAYOUT 2: EXPLORER                                                     -->
+<!-- ====================================================================== -->
+<section class="layout-card">
+  <h2>Layout B — “Explorer”</h2>
+  <p class="tagline">Graph viz dominates the screen. Query bar at the top, status at the bottom,
+  floating details panel. Best for "what does this data <em>look like</em>?" exploration.</p>
+
+  <div class="frame">
+    <div class="titlebar">
+      <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+      <span class="where">localhost:3030/mtg/sparql · graph view · 12 nodes · 18 edges</span>
+    </div>
+    <div class="layout-explorer">
+      <div class="explorer-query-bar">
+        <input class="explorer-input" value="SELECT ?card ?cat WHERE { GRAPH <…/xyris> { ?card mtg:inCategory ?cat } } LIMIT 12"/>
+        <button class="run-btn">▶ Run</button>
+      </div>
+      <div class="graph-canvas" style="position:relative;">
+        <!-- Edges as absolutely-positioned divs (mock) -->
+        <svg style="position:absolute; inset:0; width:100%; height:100%;" viewBox="0 0 800 460">
+          <g stroke="#475569" stroke-width="1" fill="none">
+            <line x1="400" y1="230" x2="240" y2="120"/>
+            <line x1="400" y1="230" x2="560" y2="120"/>
+            <line x1="400" y1="230" x2="220" y2="240"/>
+            <line x1="400" y1="230" x2="580" y2="240"/>
+            <line x1="400" y1="230" x2="260" y2="360"/>
+            <line x1="400" y1="230" x2="540" y2="360"/>
+            <line x1="240" y1="120" x2="120" y2="60"/>
+            <line x1="240" y1="120" x2="140" y2="180"/>
+            <line x1="560" y1="120" x2="680" y2="60"/>
+            <line x1="220" y1="240" x2="80" y2="280"/>
+            <line x1="580" y1="240" x2="720" y2="280"/>
+          </g>
+        </svg>
+        <div class="node commander" style="left:50%; top:50%;">Xyris</div>
+        <div class="node category" style="left:30%; top:26%;">Card Draw</div>
+        <div class="node category" style="left:70%; top:26%;">High Synergy</div>
+        <div class="node category" style="left:27.5%; top:52%;">Lands</div>
+        <div class="node category" style="left:72.5%; top:52%;">Ramp</div>
+        <div class="node category" style="left:32.5%; top:78%;">Mana Artifacts</div>
+        <div class="node category" style="left:67.5%; top:78%;">Top Cards</div>
+        <div class="node card" style="left:15%; top:13%;">Windfall</div>
+        <div class="node card" style="left:17.5%; top:39%;">Wheel of Fortune</div>
+        <div class="node card" style="left:85%; top:13%;">Impact Tremors</div>
+        <div class="node card" style="left:10%; top:61%;">Island</div>
+        <div class="node card" style="left:90%; top:61%;">Sol Ring</div>
+
+        <div class="explorer-floating-panel">
+          <strong style="color:var(--accent); font-size:13px;">Windfall</strong>
+          <div style="color:var(--muted); margin-top:4px; line-height:1.5;">
+            mtg:Card · Sorcery<br>
+            €4.88 · 63.1% inclusion · synergy 0.54
+          </div>
+          <div style="margin-top:10px; display:flex; gap:6px; flex-wrap:wrap;">
+            <span class="chip">expand neighbours</span>
+            <span class="chip">show triples</span>
+            <span class="chip">find similar</span>
+          </div>
+        </div>
+      </div>
+      <div class="explorer-statusbar">
+        <span>● Connected</span>
+        <span>Result type: bindings</span>
+        <span>Render: cytoscape · cola layout</span>
+        <span style="margin-left:auto">click-drag to pan · scroll to zoom · click node to pin</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="pros-cons">
+    <div class="pros"><strong>Pros</strong><ul>
+      <li>Graph-first — the killer "wow, I can see my data" moment is the default view</li>
+      <li>Great for explaining RDF to someone new (the picture <em>is</em> the explanation)</li>
+      <li>Smaller surface area to build (one big canvas vs three panels)</li>
+    </ul></div>
+    <div class="cons"><strong>Cons</strong><ul>
+      <li>Worse for daily querying — editor is just a one-liner, no syntax highlighting in a single input</li>
+      <li>Schema browsing is implicit (you discover by clicking) rather than explicit</li>
+      <li>Floating panels get messy with multiple selections</li>
+    </ul></div>
+  </div>
+</section>
+
+<!-- ====================================================================== -->
+<!-- LAYOUT 3: LESSONS                                                      -->
+<!-- ====================================================================== -->
+<section class="layout-card">
+  <h2>Layout C — “Lessons”</h2>
+  <p class="tagline">Notebook-style. Each "lesson" is a cell with prose + SPARQL + result.
+  Schema appears as a chip strip per cell, not a sidebar. Optimised for learning paths and shareable demos.</p>
+
+  <div class="frame">
+    <div class="titlebar">
+      <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+      <span class="where">xyris-explorations.sparqlbook · 6 cells · last run 2m ago</span>
+    </div>
+    <div class="layout-lessons">
+      <aside class="panel">
+        <div class="panel-header">Lessons</div>
+        <div class="sidebar-item">▸ 01 Counting triples</div>
+        <div class="sidebar-item">▸ 02 First card lookup</div>
+        <div class="sidebar-item" style="color:var(--accent);">▾ 03 Named graphs</div>
+        <div class="sidebar-item indent">Why scope matters</div>
+        <div class="sidebar-item indent">FROM vs GRAPH</div>
+        <div class="sidebar-item indent">Cross-graph joins</div>
+        <div class="sidebar-item">▸ 04 OPTIONAL + filter</div>
+        <div class="sidebar-item">▸ 05 Aggregation</div>
+      </aside>
+      <div class="lessons-feed">
+        <div style="font-size:13px; color:var(--muted); line-height:1.55;">
+          <strong style="color:var(--text); font-size:14px;">Named graphs scope your data</strong><br>
+          Each commander's EDHREC stats live in their own named graph. This means
+          you can ask "Xyris-specific inclusion" without affecting global card data.
+        </div>
+
+        <div class="cell">
+          <div class="cell-head">
+            <span style="color:var(--accent);">▶</span>
+            <span>Cell 3.1 · count triples in the commander context</span>
+            <span class="chip" style="margin-left:auto">GRAPH</span>
+            <span class="chip">COUNT</span>
+          </div>
+          <div class="cell-body">
+<span class="kw">SELECT</span> (<span class="kw">COUNT</span>(*) <span class="kw">AS</span> <span class="var">?n</span>) <span class="kw">WHERE</span> {
+  <span class="kw">GRAPH</span> <span class="uri">&lt;…/context/xyris-the-writhing-storm&gt;</span> { <span class="var">?s</span> <span class="var">?p</span> <span class="var">?o</span> }
+}</div>
+          <div class="cell-out">
+            <strong style="color:var(--ok);">→ 1,247</strong>
+            <span style="color:var(--muted); margin-left:12px;">scoped to the commander context</span>
+          </div>
+        </div>
+
+        <div class="cell">
+          <div class="cell-head">
+            <span style="color:var(--accent);">▶</span>
+            <span>Cell 3.2 · join named-graph signals with global card data</span>
+            <span class="chip" style="margin-left:auto">GRAPH</span>
+            <span class="chip">OPTIONAL</span>
+            <span class="chip">FILTER</span>
+          </div>
+          <div class="cell-body">
+<span class="kw">SELECT</span> <span class="var">?name</span> <span class="var">?syn</span> <span class="kw">WHERE</span> {
+  <span class="kw">GRAPH</span> <span class="uri">&lt;…/xyris&gt;</span> { <span class="var">?card</span> mtg:hasSynergyScore <span class="var">?syn</span> }
+  <span class="var">?card</span> mtg:hasName <span class="var">?name</span> .
+  <span class="kw">FILTER</span>(<span class="var">?syn</span> &gt; <span class="lit">0.5</span>)
+}</div>
+          <div class="cell-out">
+            <strong>2 rows</strong>
+            <span style="color:var(--muted); margin-left:12px;">Impact Tremors · Windfall</span>
+            <a href="#" style="color:var(--link); margin-left:12px;">view as graph</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pros-cons">
+    <div class="pros"><strong>Pros</strong><ul>
+      <li>Pedagogical by default — perfect for "learning RDF" focus</li>
+      <li>Each cell tells you <em>why</em>, not just <em>what</em></li>
+      <li>Shareable: commit the .sparqlbook file, anyone can run it</li>
+    </ul></div>
+    <div class="cons"><strong>Cons</strong><ul>
+      <li>Friction for ad-hoc daily querying (must create a cell every time)</li>
+      <li>Far from what RDF engineers expect — less obvious upgrade path to "power user mode"</li>
+      <li>Graph visualization is a secondary action, not central</li>
+    </ul></div>
+  </div>
+</section>
+
+<section style="background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  padding: 20px 24px; margin-top: 32px; font-size: 13px; line-height: 1.6;">
+  <strong style="color:var(--accent);">My recommendation: start with Layout A (Studio), but add Explorer's graph-view as a first-class results tab (already shown).</strong>
+  <p style="color: var(--muted); margin: 12px 0 0;">Reasoning: A serves the daily workflow (write query, see result, inspect) and gives you a clean home for the schema browser. The graph view lives there as a tab — you get the "wow" moment of Explorer without losing the IDE ergonomics. Lessons C is fantastic but is really a different product category (think Observable for graphs); could come later as a "notebook mode" toggle.</p>
+</section>
+</main>
+</body>
+</html>

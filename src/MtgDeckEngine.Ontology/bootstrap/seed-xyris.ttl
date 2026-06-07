@@ -1,0 +1,39 @@
+@prefix mtg:  <http://example.org/mtg#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+# Minimal seed dataset — useful for unit tests and offline development.
+# Oracle IDs taken from Scryfall (real values, so swap-in real prices later).
+
+<http://example.org/mtg#card/2bb8c0fa-1c43-4dd5-a3b8-fbb29f1c7a47>
+    a mtg:Commander , mtg:Card ;
+    mtg:hasOracleId "2bb8c0fa-1c43-4dd5-a3b8-fbb29f1c7a47" ;
+    mtg:hasName "Xyris, the Writhing Storm" ;
+    mtg:hasTypeLine "Legendary Creature — Elder Snake" ;
+    mtg:hasColorIdentity <http://example.org/mtg#color/U> , <http://example.org/mtg#color/R> , <http://example.org/mtg#color/G> ;
+    mtg:hasPriceEur "0.55"^^xsd:decimal ;
+    mtg:isCommanderLegal true .
+
+<http://example.org/mtg#card/d4b30bca-d75a-43c0-a96e-2d0a1ad6c1d3>
+    a mtg:Card ;
+    mtg:hasOracleId "d4b30bca-d75a-43c0-a96e-2d0a1ad6c1d3" ;
+    mtg:hasName "Windfall" ;
+    mtg:hasTypeLine "Sorcery" ;
+    mtg:inCategory <http://example.org/mtg#category/wheel> ;
+    mtg:hasPriceEur "3.20"^^xsd:decimal .
+
+<http://example.org/mtg#card/wheel-of-fortune-stub>
+    a mtg:Card ;
+    mtg:hasOracleId "wheel-of-fortune-stub" ;
+    mtg:hasName "Wheel of Fortune" ;
+    mtg:hasTypeLine "Sorcery" ;
+    mtg:inCategory <http://example.org/mtg#category/wheel> ;
+    mtg:hasPriceEur "40.00"^^xsd:decimal .
+
+<http://example.org/mtg#card/cultivate-stub>
+    a mtg:Card ;
+    mtg:hasOracleId "cultivate-stub" ;
+    mtg:hasName "Cultivate" ;
+    mtg:hasTypeLine "Sorcery" ;
+    mtg:inCategory <http://example.org/mtg#category/ramp> ;
+    mtg:hasPriceEur "0.30"^^xsd:decimal .

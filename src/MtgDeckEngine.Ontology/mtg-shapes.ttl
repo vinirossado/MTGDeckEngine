@@ -1,0 +1,66 @@
+@prefix mtg:  <http://example.org/mtg#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+mtg:CardShape a sh:NodeShape ;
+    sh:targetClass mtg:Card ;
+    sh:property [
+        sh:path mtg:hasOracleId ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+        sh:message "Card must have a Scryfall oracle ID."
+    ] ;
+    sh:property [
+        sh:path mtg:hasName ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+        sh:message "Card must have a name."
+    ] .
+
+mtg:DeckShape a sh:NodeShape ;
+    sh:targetClass mtg:Deck ;
+    sh:property [
+        sh:path mtg:hasCommander ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:message "A deck must have exactly one Commander."
+    ] ;
+    sh:property [
+        sh:path mtg:containsCard ;
+        sh:minCount 99 ;
+        sh:maxCount 100 ;
+        sh:message "A Commander deck must contain 99 or 100 cards."
+    ] .
+
+mtg:TournamentEntryShape a sh:NodeShape ;
+    sh:targetClass mtg:TournamentEntry ;
+    sh:property [
+        sh:path mtg:inTournament ;
+        sh:minCount 1 ;
+        sh:message "Tournament entry must reference a tournament."
+    ] ;
+    sh:property [
+        sh:path mtg:hasDeck ;
+        sh:minCount 1 ;
+        sh:message "Tournament entry must reference a deck."
+    ] ;
+    sh:property [
+        sh:path mtg:hasPlacement ;
+        sh:minCount 1 ;
+        sh:datatype xsd:integer ;
+        sh:message "Tournament entry must record a placement."
+    ] .
+
+mtg:TournamentShape a sh:NodeShape ;
+    sh:targetClass mtg:Tournament ;
+    sh:property [
+        sh:path mtg:hasName ;
+        sh:minCount 1 ;
+        sh:message "Tournament must have a name."
+    ] ;
+    sh:property [
+        sh:path mtg:hasDate ;
+        sh:minCount 1 ;
+        sh:datatype xsd:date ;
+        sh:message "Tournament must have a date."
+    ] .

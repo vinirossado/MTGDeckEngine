@@ -1,0 +1,8 @@
+{
+  // Treat .sparql files as plain text but use a syntax close enough to be useful.
+  // For real SPARQL highlighting install a Zed extension that ships a SPARQL
+  // tree-sitter grammar; until then SQL is a reasonable approximation.
+  "file_types": {
+    "SQL": ["sparql", "rq"]
+  }
+}

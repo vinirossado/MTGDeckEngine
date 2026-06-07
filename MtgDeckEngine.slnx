@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MtgDeckEngine.Api/MtgDeckEngine.Api.csproj" />
+    <Project Path="src/MtgDeckEngine.Core/MtgDeckEngine.Core.csproj" />
+    <Project Path="src/MtgDeckEngine.Graph/MtgDeckEngine.Graph.csproj" />
+    <Project Path="src/MtgDeckEngine.Ingestion/MtgDeckEngine.Ingestion.csproj" />
+    <Project Path="src/MtgDeckEngine.Ontology/MtgDeckEngine.Ontology.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MtgDeckEngine.IntegrationTests/MtgDeckEngine.IntegrationTests.csproj" />
+    <Project Path="tests/MtgDeckEngine.UnitTests/MtgDeckEngine.UnitTests.csproj" />
+  </Folder>
+</Solution>

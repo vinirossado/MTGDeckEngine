@@ -1,0 +1,9 @@
+# "What predicates actually appear in this dataset?" — the empirical schema,
+# regardless of what the ontology declares. Useful for exploring an
+# unfamiliar endpoint.
+SELECT ?predicate (COUNT(*) AS ?uses) WHERE {
+  ?s ?predicate ?o
+}
+GROUP BY ?predicate
+ORDER BY DESC(?uses)
+LIMIT 30

@@ -1,0 +1,10 @@
+PREFIX mtg: <http://example.org/mtg#>
+
+SELECT ?name (COUNT(?deck) AS ?numDecks) WHERE {
+  ?deck mtg:hasCommander @commander ;
+        mtg:containsCard ?card .
+  ?card mtg:hasName ?name .
+}
+GROUP BY ?name
+ORDER BY DESC(?numDecks)
+LIMIT @limit
