@@ -6,6 +6,11 @@ using MtgDeckEngine.Ingestion;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Optional gitignored local overrides for secrets — used only when
+// `dotnet user-secrets` isn't a convenient fit.
+builder.Configuration.AddJsonFile("appsettings.Local.json",
+    optional: true, reloadOnChange: true);
+
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 

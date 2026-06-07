@@ -4,3 +4,9 @@ obj/
 .vs/
 .idea/
 .DS_Store
+
+# Secrets — never commit. Prefer `dotnet user-secrets`; fall back to
+# appsettings.Local.json for things user-secrets can't carry.
+appsettings.Local.json
+.env
+.env.local

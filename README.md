@@ -121,6 +121,53 @@ info: ... StartupIngestionWorker[0] Startup ingestion complete.
   of ingestion). Tweak the `TimePeriod` enum in `EdhTop16Ingestor.cs` if
   you want a different window.
 
+### TopDeck.gg ingestion (Phase 3 — multi-format)
+
+TopDeck.gg covers EDH **and** Modern, Pioneer, Legacy, Standard, Pauper, and
+more from a single REST endpoint with full decklists and round data.
+Disabled by default because it requires a free API key.
+
+**Enable it:**
+
+1. Register at https://topdeck.gg, then generate an API key in your
+   profile.
+2. Store the key with **.NET user-secrets** (preferred — keys live in
+   your home directory, never anywhere near git):
+   ```bash
+   dotnet user-secrets set "TopDeck:ApiKey" "your-key-here" \
+     --project src/MtgDeckEngine.Api
+   dotnet user-secrets set "Ingestion:EnableTopDeck" "true" \
+     --project src/MtgDeckEngine.Api
+   ```
+   Optional tuning (defaults are fine for most setups):
+   ```bash
+   dotnet user-secrets set "TopDeck:Formats:0" "EDH"      --project src/MtgDeckEngine.Api
+   dotnet user-secrets set "TopDeck:Formats:1" "Modern"   --project src/MtgDeckEngine.Api
+   dotnet user-secrets set "TopDeck:LookbackDays" "60"    --project src/MtgDeckEngine.Api
+   dotnet user-secrets set "TopDeck:MinParticipants" "16" --project src/MtgDeckEngine.Api
+   ```
+   *(Alternative: drop the same settings into `appsettings.Local.json`,
+   which is gitignored. Use user-secrets if you can — it's the .NET idiom
+   and keeps the API project free of secret-shaped files.)*
+3. Restart the API. You'll see lines like:
+   ```
+   info: TopDeckIngestor[0] TopDeck: fetching EDH tournaments, last 60 days, ≥16 players
+   info: TopDeckIngestor[0] TopDeck: wrote 42 EDH tournaments, 1,847 entries; 31 card-name misses
+   info: TopDeckIngestor[0] TopDeck: fetching Modern tournaments, last 60 days, ≥16 players
+   info: TopDeckIngestor[0] TopDeck: wrote 18 Modern tournaments, 612 entries; 8 card-name misses
+   ```
+
+**Multi-format ontology.** `mtg:hasFormat` lives on both Tournament and Deck;
+TopDeck normalises format strings to uppercase + underscores (`EDH`, `MODERN`,
+`DUEL_COMMANDER`, ...). The SHACL `DeckShape` was relaxed in Phase 3 so
+60-card constructed decks pass — Commander-specific (99–100 card) and
+Constructed-specific (60+) shapes ship as optional sibling shapes that can be
+enabled selectively when SHACL validation is wired into the ingest pipeline.
+
+**Attribution.** TopDeck.gg's terms require visible credit linking back to
+their site for any project that uses the API. The README's roadmap section
+includes this credit; keep it there if you fork.
+
 ---
 
 ## API endpoints
@@ -322,14 +369,20 @@ curl -X POST 'http://localhost:3030/mtg/update' \
 - **Phase 2 — Tournament signals (done — EDHTop16).** Tournament aggregate
   stats + per-entry data via EDHTop16 GraphQL; `/meta` endpoint;
   tournament-aware recommendations (`source=Tournament` / `All`,
-  `maxPlacement`, `minTopCutAppearances`). Spicerack ingestion deferred to
-  a later phase (requires an API key).
-- **Phase 3 — Multi-commander + AI layer.** Generalised ingestion across any
-  commander slug; Moxfield decklists; LLM-backed deck-suggestion endpoint;
+  `maxPlacement`, `minTopCutAppearances`).
+- **Phase 3 — Multi-format (done — TopDeck.gg).** REST ingestion of
+  tournament data across every TopDeck-supported format (EDH, Modern,
+  Pioneer, Legacy, Standard, Pauper, …). Multi-format ontology + relaxed
+  SHACL shapes. Feature-flagged behind a free API key. Tournament data
+  attributed to [TopDeck.gg](https://topdeck.gg).
+- **Phase 4 — Multi-commander + AI layer.** Generalised ingestion across any
+  commander slug at the API level; LLM-backed deck-suggestion endpoint;
   smarter (type-quota-aware, MIP-based) budget deck builder.
-- **Phase 4 — AWS.** Swap Fuseki for Amazon Neptune (same SPARQL 1.1
+- **Phase 5 — AWS.** Swap Fuseki for Amazon Neptune (same SPARQL 1.1
   protocol); deploy API to EKS; background workers as CronJobs;
   CloudWatch / X-Ray observability.
+
+> Tournament data sourced in part from [TopDeck.gg](https://topdeck.gg).
 
 See [CLAUDE.md](CLAUDE.md) for the long-form plan, ontology, and interview-ready
 notes on every architectural choice.

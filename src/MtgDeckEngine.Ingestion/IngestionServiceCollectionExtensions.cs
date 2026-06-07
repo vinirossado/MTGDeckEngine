@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using MtgDeckEngine.Ingestion.Http;
 using MtgDeckEngine.Ingestion.Workers;
 
@@ -11,6 +12,7 @@ public static class IngestionServiceCollectionExtensions
     public static IServiceCollection AddMtgIngestion(this IServiceCollection services, IConfiguration config)
     {
         services.Configure<IngestionOptions>(config.GetSection(IngestionOptions.SectionName));
+        services.Configure<TopDeckOptions>(config.GetSection(TopDeckOptions.SectionName));
 
         services.AddHttpClient<ScryfallClient>(c =>
         {
@@ -45,9 +47,20 @@ public static class IngestionServiceCollectionExtensions
             c.DefaultRequestHeaders.Add("User-Agent", "MtgDeckEngine/0.2 (+phase2)");
             c.Timeout = TimeSpan.FromSeconds(30);
         });
+        services.AddHttpClient<TopDeckClient>((sp, c) =>
+        {
+            c.DefaultRequestHeaders.Add("Accept", "application/json");
+            c.DefaultRequestHeaders.Add("User-Agent", "MtgDeckEngine/0.3 (+phase3)");
+            c.Timeout = TimeSpan.FromSeconds(60);
+            // TopDeck.gg auth: bare API key in the Authorization header (no "Bearer" prefix).
+            var key = sp.GetRequiredService<IOptions<TopDeckOptions>>().Value.ApiKey;
+            if (!string.IsNullOrWhiteSpace(key))
+                c.DefaultRequestHeaders.Add("Authorization", key);
+        });
 
         services.AddScoped<CommanderIngestor>();
         services.AddScoped<EdhTop16Ingestor>();
+        services.AddScoped<TopDeckIngestor>();
         services.AddHostedService<StartupIngestionWorker>();
         return services;
     }

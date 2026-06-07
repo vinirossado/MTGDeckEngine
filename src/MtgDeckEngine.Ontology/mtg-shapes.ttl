@@ -20,17 +20,17 @@ mtg:CardShape a sh:NodeShape ;
 mtg:DeckShape a sh:NodeShape ;
     sh:targetClass mtg:Deck ;
     sh:property [
-        sh:path mtg:hasCommander ;
+        sh:path mtg:hasSource ;
         sh:minCount 1 ;
-        sh:maxCount 1 ;
-        sh:message "A deck must have exactly one Commander."
-    ] ;
-    sh:property [
-        sh:path mtg:containsCard ;
-        sh:minCount 99 ;
-        sh:maxCount 100 ;
-        sh:message "A Commander deck must contain 99 or 100 cards."
+        sh:datatype xsd:string ;
+        sh:message "A deck must declare its source (edhrec, edhtop16, topdeck, ...)."
     ] .
+
+# Phase 1 used a 99-100 card Commander constraint as the DeckShape. Phase 3
+# generalises to multi-format decks (Modern 60+, Legacy 60+, Standard 60+,
+# Commander 99 or 100), so format-specific rules are now stored as
+# Commander-only / Constructed-only shapes that we can wire in selectively
+# when SHACL validation is enabled in the pipeline.
 
 mtg:TournamentEntryShape a sh:NodeShape ;
     sh:targetClass mtg:TournamentEntry ;

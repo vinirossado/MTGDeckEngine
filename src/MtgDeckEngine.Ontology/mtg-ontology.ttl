@@ -81,7 +81,8 @@ mtg:hasTotalPriceUsd   a owl:DatatypeProperty ; rdfs:domain mtg:Deck ; rdfs:rang
 
 mtg:hasDate            a owl:DatatypeProperty ; rdfs:domain mtg:Tournament ; rdfs:range xsd:date .
 mtg:hasPlayerCount     a owl:DatatypeProperty ; rdfs:domain mtg:Tournament ; rdfs:range xsd:integer .
-mtg:hasFormat          a owl:DatatypeProperty ; rdfs:domain mtg:Tournament ; rdfs:range xsd:string .
+# Applies to Tournament and Deck (multi-format: COMMANDER, MODERN, LEGACY, ...).
+mtg:hasFormat          a owl:DatatypeProperty ; rdfs:range xsd:string .
 mtg:hasTopCutSize      a owl:DatatypeProperty ; rdfs:domain mtg:Tournament ; rdfs:range xsd:integer .
 mtg:hasSwissRounds     a owl:DatatypeProperty ; rdfs:domain mtg:Tournament ; rdfs:range xsd:integer .
 

@@ -62,6 +62,19 @@ public sealed class StartupIngestionWorker(
                 }
             }
 
+            if (opts.Value.EnableTopDeck)
+            {
+                var topdeck = scope.ServiceProvider.GetRequiredService<TopDeckIngestor>();
+                try
+                {
+                    await topdeck.IngestAllFormatsAsync(ct).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "TopDeck ingestion failed; continuing");
+                }
+            }
+
             logger.LogInformation("Startup ingestion complete.");
         }
         catch (OperationCanceledException) { /* shutdown */ }

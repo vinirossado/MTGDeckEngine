@@ -21,4 +21,7 @@ public sealed class IngestionOptions
 
     /// <summary>Max tournament entries per commander to ingest from EDHTop16.</summary>
     public int MaxTournamentEntriesPerCommander { get; set; } = 100;
+
+    /// <summary>Enable TopDeck.gg multi-format tournament ingestion (Phase 3).</summary>
+    public bool EnableTopDeck { get; set; }
 }
