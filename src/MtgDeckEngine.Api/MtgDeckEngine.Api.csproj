@@ -17,6 +17,7 @@
     <ProjectReference Include="..\MtgDeckEngine.Graph\MtgDeckEngine.Graph.csproj" />
     <ProjectReference Include="..\MtgDeckEngine.Ingestion\MtgDeckEngine.Ingestion.csproj" />
     <ProjectReference Include="..\MtgDeckEngine.Ontology\MtgDeckEngine.Ontology.csproj" />
+    <ProjectReference Include="..\MtgDeckEngine.Ai\MtgDeckEngine.Ai.csproj" />
   </ItemGroup>
 
 </Project>

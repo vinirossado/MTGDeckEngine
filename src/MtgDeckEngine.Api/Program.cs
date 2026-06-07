@@ -1,3 +1,4 @@
+using MtgDeckEngine.Ai;
 using MtgDeckEngine.Core.Interfaces;
 using MtgDeckEngine.Graph;
 using MtgDeckEngine.Graph.Repositories;
@@ -28,6 +29,7 @@ builder.Services.AddSingleton<IDeckRecommendationService, DeckRecommendationServ
 builder.Services.AddSingleton<IFormatService, FormatService>();
 
 builder.Services.AddMtgIngestion(builder.Configuration);
+builder.Services.AddMtgAi(builder.Configuration);
 
 var app = builder.Build();
 
