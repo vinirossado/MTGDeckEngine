@@ -25,6 +25,7 @@ builder.Services.AddSingleton<IGraphRepository>(sp =>
 
 builder.Services.AddSingleton<ShaclValidator>();
 builder.Services.AddSingleton<IDeckRecommendationService, DeckRecommendationService>();
+builder.Services.AddSingleton<IFormatService, FormatService>();
 
 builder.Services.AddMtgIngestion(builder.Configuration);
 

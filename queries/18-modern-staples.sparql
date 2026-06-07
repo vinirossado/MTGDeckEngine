@@ -1,0 +1,15 @@
+PREFIX mtg: <http://example.org/mtg#>
+
+# Modern staples — cards appearing in the most Modern top-cut decks under €20.
+SELECT ?name ?priceEur (COUNT(DISTINCT ?deck) AS ?decks) WHERE {
+  ?t a mtg:Tournament ; mtg:hasFormat "MODERN" .
+  ?entry mtg:inTournament ?t ; mtg:hasDeck ?deck ; mtg:hasPlacement ?p .
+  ?deck  mtg:containsCard ?card .
+  ?card  mtg:hasName ?name .
+  OPTIONAL { ?card mtg:hasPriceEur ?priceEur }
+  FILTER (?p <= 8)
+  FILTER (!BOUND(?priceEur) || ?priceEur <= 20.0)
+}
+GROUP BY ?name ?priceEur
+ORDER BY DESC(?decks) ?priceEur
+LIMIT 25

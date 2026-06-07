@@ -1,0 +1,12 @@
+PREFIX mtg: <http://example.org/mtg#>
+
+# Every format we have data for + the volume per format. Phase 3 onwards.
+SELECT ?format
+       (COUNT(DISTINCT ?t) AS ?tournaments)
+       (COUNT(DISTINCT ?deck) AS ?decks)
+WHERE {
+  ?t a mtg:Tournament ; mtg:hasFormat ?format .
+  OPTIONAL { ?entry mtg:inTournament ?t ; mtg:hasDeck ?deck }
+}
+GROUP BY ?format
+ORDER BY DESC(?tournaments)
