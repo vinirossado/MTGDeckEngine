@@ -10,6 +10,11 @@ suggestions.
 > through the whole project — RDF concepts, ontology, architecture, the
 > phase-by-phase journey, and how each external source becomes triples.
 > Open it locally with `open docs/explainer.html`.
+>
+> 📚 **Study guide:** [`docs/STUDY.md`](docs/STUDY.md) — focused walk-through
+> of how RDF / OWL / SHACL / SPARQL each show up in this codebase. File
+> paths, line references, and a single-card walk-through tying all four
+> specs together. Best read side-by-side with the source.
 
 **Why it exists.** EDHREC shows *popularity*. EDHTop16 shows *tournament
 performance*. They are different signals. By fusing them in one knowledge graph
