@@ -8,6 +8,8 @@ import type {
   CardRecommendation,
   CommanderMeta,
   CommanderSummary,
+  FormatMeta,
+  FormatSummary,
 } from './api/api.types';
 import { CardGridComponent } from './components/card-grid.component';
 
@@ -17,6 +19,8 @@ interface Preset {
   description: string;
   run: () => void;
 }
+
+type Mode = 'commander' | 'format';
 
 @Component({
   selector: 'app-root',
@@ -29,19 +33,28 @@ export class AppComponent {
   private readonly api = inject(MtgApiService);
 
   readonly commanders = signal<CommanderSummary[]>([]);
+  readonly formats    = signal<FormatSummary[]>([]);
+  readonly mode       = signal<Mode>('commander');
   readonly slug       = signal<string>('xyris-the-writhing-storm');
+  readonly format     = signal<string>('EDH');
   readonly newSlug    = signal<string>('');
   readonly status     = signal<string>('');
   readonly meta       = signal<CommanderMeta | null>(null);
+  readonly formatMeta = signal<FormatMeta | null>(null);
   readonly cards      = signal<CardRecommendation[]>([]);
   readonly deck       = signal<BudgetDeck | null>(null);
   readonly loading    = signal<boolean>(false);
 
-  readonly title = computed(() => `MTG Deck Engine — ${this.slug() || '—'}`);
+  readonly title = computed(() =>
+    this.mode() === 'commander'
+      ? `MTG Deck Engine — ${this.slug() || '—'}`
+      : `MTG Deck Engine — ${this.format() || '—'} format`,
+  );
 
   // Preset queries shown as buttons. Each one calls a Phase 1+ endpoint
   // we built on the API side; the result populates `cards` or `deck`.
-  readonly presets: Preset[] = [
+  // Filtered to the active mode (commander vs format) by `presets()` below.
+  readonly commanderPresets: Preset[] = [
     {
       key: 'top-staples',
       label: 'Top 25 staples (no basics)',
@@ -81,9 +94,97 @@ export class AppComponent {
     },
   ];
 
+  readonly formatPresets: Preset[] = [
+    {
+      key: 'format-staples',
+      label: 'Top 25 format staples',
+      description: 'Most-played cards in this format (any placement).',
+      run: () => this.runFormatStaples({ minDeckCount: 1, limit: 25 }),
+    },
+    {
+      key: 'format-top8-under-10',
+      label: 'Top 8 cards under €10',
+      description: 'Cards in Top-8 finishing decks, capped at €10 each.',
+      run: () =>
+        this.runFormatStaples({ maxPlacement: 8, maxPriceEur: 10, minDeckCount: 1, limit: 25 }),
+    },
+    {
+      key: 'format-budget-under-5',
+      label: 'Budget gems under €5',
+      description: 'Cheap cards that still appear in winning lists.',
+      run: () =>
+        this.runFormatStaples({ maxPriceEur: 5, minDeckCount: 2, limit: 30 }),
+    },
+  ];
+
+  readonly presets = computed(() =>
+    this.mode() === 'commander' ? this.commanderPresets : this.formatPresets,
+  );
+
   constructor() {
     this.refreshCommanderList();
+    this.refreshFormatList();
     this.fetchMeta();
+  }
+
+  setMode(m: Mode): void {
+    if (this.mode() === m) return;
+    this.mode.set(m);
+    this.cards.set([]);
+    this.deck.set(null);
+    this.meta.set(null);
+    this.formatMeta.set(null);
+    this.status.set('');
+    if (m === 'commander') this.fetchMeta();
+    else this.fetchFormatMeta();
+  }
+
+  refreshFormatList(): void {
+    this.api.listFormats().subscribe(list => this.formats.set(list));
+  }
+
+  pickFormat(f: string): void {
+    if (!f) return;
+    this.format.set(f);
+    this.cards.set([]);
+    this.deck.set(null);
+    this.formatMeta.set(null);
+    this.fetchFormatMeta();
+  }
+
+  fetchFormatMeta(): void {
+    if (!this.format()) return;
+    this.api.formatMeta(this.format()).pipe(catchError(() => of(null)))
+      .subscribe(m => this.formatMeta.set(m));
+  }
+
+  runFormatStaples(opts: { maxPriceEur?: number; maxPlacement?: number; minDeckCount?: number; limit?: number } = {}): void {
+    if (!this.format()) return;
+    this.loading.set(true);
+    this.deck.set(null);
+    this.status.set('Loading…');
+    this.api.formatStaples(this.format(), opts).pipe(
+      tap(staples => {
+        // Adapt FormatStaple → CardRecommendation so the existing grid renders it.
+        const adapted: CardRecommendation[] = staples.map(s => ({
+          oracleId: s.oracleId,
+          name:     s.name,
+          category: null,
+          inclusionPct: null,
+          synergyScore: null,
+          priceEur: s.priceEur,
+          topCutAppearances: s.deckCount,
+          imageUrl: s.imageUrl,
+        }));
+        this.cards.set(adapted);
+        this.status.set(`${adapted.length} cards`);
+      }),
+      catchError(err => {
+        this.status.set(`Error: ${err?.message ?? err}`);
+        this.cards.set([]);
+        return of(null);
+      }),
+    ).subscribe(() => this.loading.set(false));
   }
 
   refreshCommanderList(): void {

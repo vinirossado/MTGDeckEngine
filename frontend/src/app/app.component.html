@@ -1,22 +1,32 @@
-<!--
-  Layout: top bar (title + ingest + status) · sidebar (commanders + presets)
-  · main pane (meta strip + card grid). Tailwind only, no extra UI libs.
--->
 <main class="min-h-screen flex flex-col">
 
   <!-- ───────────────────── Top bar ────────────────────── -->
   <header class="border-b border-border2 bg-panel/80 backdrop-blur">
-    <div class="max-w-7xl mx-auto px-6 py-3 flex items-center gap-4">
-      <h1 class="text-lg font-semibold text-accent flex-1 truncate">
+    <div class="max-w-7xl mx-auto px-6 py-3 flex items-center gap-4 flex-wrap">
+      <h1 class="text-lg font-semibold text-accent flex-1 truncate min-w-0">
         {{ title() }}
       </h1>
 
-      <!-- On-demand ingest (Phase 6a) -->
-      <div class="flex items-center gap-2">
+      <!-- Mode toggle -->
+      <div class="inline-flex rounded-lg border border-border2 bg-bg overflow-hidden text-sm">
+        <button (click)="setMode('commander')"
+                [class.bg-accent2]="mode() === 'commander'"
+                [class.text-bg]="mode() === 'commander'"
+                [class.text-muted]="mode() !== 'commander'"
+                class="px-3 py-1.5 transition-colors">Commander</button>
+        <button (click)="setMode('format')"
+                [class.bg-accent2]="mode() === 'format'"
+                [class.text-bg]="mode() === 'format'"
+                [class.text-muted]="mode() !== 'format'"
+                class="px-3 py-1.5 transition-colors">Format</button>
+      </div>
+
+      <!-- On-demand commander ingest (commander mode only) -->
+      <div *ngIf="mode() === 'commander'" class="flex items-center gap-2">
         <input
           [ngModel]="newSlug()"
           (ngModelChange)="newSlug.set($event)"
-          placeholder="Atraxa, Praetors' Voice  —  or paste a slug"
+          placeholder="Atraxa, Praetors' Voice — or paste a slug"
           title="Type the commander's full name OR an EDHREC slug. Either form works."
           class="bg-bg border border-border2 rounded px-3 py-1.5 text-sm w-80
                  focus:outline-none focus:border-accent placeholder:text-muted/60"
@@ -43,8 +53,9 @@
     <!-- ───────────────────── Sidebar ────────────────────── -->
     <aside class="flex flex-col gap-6">
 
-      <!-- Commander picker -->
-      <section class="bg-panel border border-border2 rounded-xl p-4">
+      <!-- Commander picker (commander mode) -->
+      <section *ngIf="mode() === 'commander'"
+               class="bg-panel border border-border2 rounded-xl p-4">
         <h2 class="text-xs uppercase tracking-wider text-muted mb-3">Commander</h2>
         <select
           [ngModel]="slug()"
@@ -67,11 +78,30 @@
         </p>
       </section>
 
+      <!-- Format picker (format mode) -->
+      <section *ngIf="mode() === 'format'"
+               class="bg-panel border border-border2 rounded-xl p-4">
+        <h2 class="text-xs uppercase tracking-wider text-muted mb-3">Format</h2>
+        <select
+          [ngModel]="format()"
+          (ngModelChange)="pickFormat($event)"
+          class="w-full bg-bg border border-border2 rounded px-3 py-2 text-sm
+                 focus:outline-none focus:border-accent">
+          <option *ngFor="let f of formats()" [value]="f.format">
+            {{ f.format }} · {{ f.tournamentCount }} events
+          </option>
+        </select>
+        <p class="mt-2 text-[11px] text-muted leading-snug">
+          Pull cards across all decks in this format
+          (TopDeck.gg-sourced tournament data — Phase 3).
+        </p>
+      </section>
+
       <!-- Preset queries -->
       <section class="bg-panel border border-border2 rounded-xl p-4">
         <h2 class="text-xs uppercase tracking-wider text-muted mb-3">Preset queries</h2>
         <ul class="flex flex-col gap-2">
-          <li *ngFor="let p of presets">
+          <li *ngFor="let p of presets()">
             <button
               (click)="p.run()"
               [disabled]="loading()"
@@ -88,8 +118,8 @@
     <!-- ───────────────────── Main pane ────────────────────── -->
     <section class="flex flex-col gap-4 min-w-0">
 
-      <!-- Tournament meta strip (Phase 2) -->
-      <div *ngIf="meta() as m"
+      <!-- Tournament meta strip — commander (Phase 2) -->
+      <div *ngIf="mode() === 'commander' && meta() as m"
            class="bg-panel border border-border2 rounded-xl p-4
                   grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
         <div>
@@ -114,7 +144,33 @@
         </div>
       </div>
 
-      <!-- Deck summary banner (when build-deck was the last action) -->
+      <!-- Tournament meta strip — format (Phase 4a) -->
+      <div *ngIf="mode() === 'format' && formatMeta() as fm"
+           class="bg-panel border border-border2 rounded-xl p-4
+                  grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
+        <div>
+          <div class="text-[11px] uppercase text-muted">Format</div>
+          <div class="text-lg text-accent">{{ fm.format }}</div>
+        </div>
+        <div>
+          <div class="text-[11px] uppercase text-muted">Tournaments</div>
+          <div class="text-lg text-accent">{{ fm.tournamentCount }}</div>
+        </div>
+        <div>
+          <div class="text-[11px] uppercase text-muted">Decks</div>
+          <div class="text-lg text-accent2">{{ fm.deckCount }}</div>
+        </div>
+        <div>
+          <div class="text-[11px] uppercase text-muted">Top 4 decks</div>
+          <div class="text-lg text-ok">{{ fm.top4DeckCount }}</div>
+        </div>
+        <div>
+          <div class="text-[11px] uppercase text-muted">Top 16 decks</div>
+          <div class="text-lg text-warn">{{ fm.top16DeckCount }}</div>
+        </div>
+      </div>
+
+      <!-- Deck summary banner (commander build-deck) -->
       <div *ngIf="deck() as d"
            class="bg-accent2/10 border border-accent2/40 rounded-xl px-4 py-3 flex items-center gap-4">
         <div>

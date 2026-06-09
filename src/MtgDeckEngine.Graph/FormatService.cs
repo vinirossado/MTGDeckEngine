@@ -97,7 +97,7 @@ WHERE {{
 PREFIX mtg: <{MtgVocab.Namespace}>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
-SELECT ?oracleId ?name ?priceEur (COUNT(DISTINCT ?deck) AS ?deckCount) WHERE {{
+SELECT ?oracleId ?name ?priceEur ?imageUrl (COUNT(DISTINCT ?deck) AS ?deckCount) WHERE {{
   ?entry mtg:inTournament ?t ;
          mtg:hasDeck       ?deck ;
          mtg:hasPlacement  ?placement .
@@ -106,10 +106,11 @@ SELECT ?oracleId ?name ?priceEur (COUNT(DISTINCT ?deck) AS ?deckCount) WHERE {{
   ?card mtg:hasOracleId ?oracleId ;
         mtg:hasName     ?name .
   OPTIONAL {{ ?card mtg:hasPriceEur ?priceEur }}
+  OPTIONAL {{ ?card mtg:hasImageUrl ?imageUrl }}
   {placementFilter}
   FILTER (!BOUND(?priceEur) || ?priceEur <= ""{Fmt(maxPrice)}""^^xsd:decimal)
 }}
-GROUP BY ?oracleId ?name ?priceEur
+GROUP BY ?oracleId ?name ?priceEur ?imageUrl
 HAVING (COUNT(DISTINCT ?deck) >= {minDeckCount})
 ORDER BY DESC(?deckCount) ?priceEur
 LIMIT {lim}";
@@ -121,6 +122,7 @@ LIMIT {lim}";
             list.Add(new FormatStaple(
                 OracleId:  Str(row, "oracleId") ?? "",
                 Name:      Str(row, "name") ?? "",
+                ImageUrl:  Str(row, "imageUrl"),
                 PriceEur:  Dec(row, "priceEur"),
                 DeckCount: (int)(Dec(row, "deckCount") ?? 0m)));
         }

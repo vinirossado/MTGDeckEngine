@@ -69,6 +69,15 @@ public static class EdhTop16ToRdfMapper
                 g.Assert(deck,
                     g.CreateUriNode(new Uri(MtgVocab.Property("containsCard"))),
                     cardNode);
+
+                // Minimal global card facts so the card has a name in queries
+                // even if EDHREC didn't surface it. Image URL would need the
+                // Scryfall bulk cache to be passed in — left for now; cards
+                // also appearing in EDHREC will have images via that path.
+                Assert(g, cardNode, "hasOracleId", g.CreateLiteralNode(card.OracleId!));
+                if (!string.IsNullOrWhiteSpace(card.Name))
+                    Assert(g, cardNode, "hasName", g.CreateLiteralNode(card.Name));
+                AssertType(g, cardNode, "Card");
                 cardsAdded++;
             }
         }

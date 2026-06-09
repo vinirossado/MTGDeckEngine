@@ -42,9 +42,14 @@ public static class TopDeckToRdfMapper
 
         var entriesAdded = 0;
         if (t.Standings is null) return 0;
-        foreach (var s in t.Standings)
+        // TopDeck's search endpoint doesn't return per-standing `standing`
+        // (that field is only on the /standings sub-resource). The array
+        // itself is ordered by rank, so use the index as the placement.
+        for (var i = 0; i < t.Standings.Count; i++)
         {
-            var (entriesDelta, missesDelta) = AssertStanding(g, tournament, t.TID, fmt, s, scryfall);
+            var s = t.Standings[i];
+            var placement = s.Standing ?? (i + 1);
+            var (entriesDelta, missesDelta) = AssertStanding(g, tournament, t.TID, fmt, s, placement, scryfall);
             entriesAdded += entriesDelta;
             unresolvedCards += missesDelta;
         }
@@ -57,15 +62,16 @@ public static class TopDeckToRdfMapper
         string tournamentId,
         string format,
         TopDeckStanding s,
+        int placement,
         ScryfallBulkCache scryfall)
     {
         var entryKey = !string.IsNullOrWhiteSpace(s.Id)
             ? Slug(s.Id!)
-            : $"p{s.Standing ?? 0}_{Slug(s.Name)}";
+            : $"p{placement}_{Slug(s.Name)}";
         var entryUri = g.CreateUriNode(new Uri(MtgVocab.TournamentEntryUri(Source, tournamentId, entryKey)));
         AssertType(g, entryUri, "TournamentEntry");
         Assert(g, entryUri, "inTournament", tournament);
-        if (s.Standing is int placement) Assert(g, entryUri, "hasPlacement", Int(g, placement));
+        Assert(g, entryUri, "hasPlacement", Int(g, placement));
         if (s.Wins is int w) Assert(g, entryUri, "hasWinsSwiss", Int(g, w));
         if (s.WinsSwiss is int ws) Assert(g, entryUri, "hasWinsSwiss", Int(g, ws));
         if (s.LossesSwiss is int ls) Assert(g, entryUri, "hasLossesSwiss", Int(g, ls));
@@ -103,6 +109,14 @@ public static class TopDeckToRdfMapper
                         g.Assert(deck,
                             g.CreateUriNode(new Uri(MtgVocab.Property("containsCard"))),
                             cardNode);
+
+                        // Also write the global card facts (oracleId / name / type /
+                        // price / image URL). INSERT DATA is idempotent for identical
+                        // triples so duplicating across decks is a no-op. Without
+                        // this, Modern/Legacy cards we don't otherwise touch via
+                        // EDHREC stay nameless in the graph and don't show up in
+                        // format-staples queries.
+                        ScryfallToRdfMapper.AssertCard(g, ScryfallToRdfMapper.ToDto(card));
                     }
                     else
                     {
@@ -119,17 +133,29 @@ public static class TopDeckToRdfMapper
     ///   "1 Sol Ring"
     ///   "1x Sol Ring"
     ///   "Sol Ring"
-    /// Lines that are empty / comments / sideboard headers are skipped.
+    /// Lines that are empty / comments / sideboard headers / TopDeck-style
+    /// section markers (~~Commanders~~ / ~~Mainboard~~) are skipped.
+    /// Also handles TopDeck.gg's literal "\n" backslash-n escape — their
+    /// payload comes in as a single string with embedded escapes rather than
+    /// real newlines.
     /// </summary>
     public static IEnumerable<(string Name, int Qty)> ParseTextDecklist(string text)
     {
-        foreach (var raw in text.Split('\n'))
+        // Real newlines OR literal "\n" (TopDeck.gg payload form).
+        var normalised = text
+            .Replace("\\r\\n", "\n", StringComparison.Ordinal)
+            .Replace("\\n", "\n", StringComparison.Ordinal)
+            .Replace("\\'", "'", StringComparison.Ordinal);
+
+        foreach (var raw in normalised.Split('\n'))
         {
             var line = raw.Trim();
             if (line.Length == 0) continue;
             if (line.StartsWith("//") || line.StartsWith('#')) continue;
+            if (line.StartsWith("~~")) continue;                                       // markdown section headers
             if (line.StartsWith("Sideboard", StringComparison.OrdinalIgnoreCase)) yield break;
             if (line.StartsWith("Commander", StringComparison.OrdinalIgnoreCase)) continue;
+            if (line.StartsWith("Mainboard", StringComparison.OrdinalIgnoreCase)) continue;
             if (line.StartsWith("Deck", StringComparison.OrdinalIgnoreCase)) continue;
 
             // Strip optional set/collector suffix: "Sol Ring (CMR) 472"

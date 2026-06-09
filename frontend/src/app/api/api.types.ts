@@ -45,6 +45,24 @@ export interface FormatSummary {
   entryCount: number;
 }
 
+export interface FormatMeta {
+  format: string;
+  tournamentCount: number;
+  deckCount: number;
+  entryCount: number;
+  top4DeckCount: number;
+  top16DeckCount: number;
+  latestTournamentDate: string | null;
+}
+
+export interface FormatStaple {
+  oracleId: string;
+  name: string;
+  priceEur: number | null;
+  deckCount: number;
+  imageUrl: string | null;
+}
+
 export interface IngestSummary {
   commanderSlug: string;
   edhrecIngested: boolean;

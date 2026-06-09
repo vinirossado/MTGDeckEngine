@@ -6,6 +6,8 @@ import type {
   CardRecommendation,
   CommanderMeta,
   CommanderSummary,
+  FormatMeta,
+  FormatStaple,
   FormatSummary,
   IngestSummary,
   RecommendationFilters,
@@ -24,6 +26,26 @@ export class MtgApiService {
 
   listFormats(): Observable<FormatSummary[]> {
     return this.http.get<FormatSummary[]>(`${this.base}/formats`);
+  }
+
+  formatMeta(format: string): Observable<FormatMeta> {
+    return this.http.get<FormatMeta>(
+      `${this.base}/formats/${encodeURIComponent(format)}/meta`,
+    );
+  }
+
+  formatStaples(
+    format: string,
+    opts: { maxPriceEur?: number; maxPlacement?: number; minDeckCount?: number; limit?: number } = {},
+  ): Observable<FormatStaple[]> {
+    let p = new HttpParams();
+    for (const [k, v] of Object.entries(opts)) {
+      if (v != null) p = p.set(k, String(v));
+    }
+    return this.http.get<FormatStaple[]>(
+      `${this.base}/formats/${encodeURIComponent(format)}/staples`,
+      { params: p },
+    );
   }
 
   recommendations(slug: string, f: RecommendationFilters = {}): Observable<CardRecommendation[]> {

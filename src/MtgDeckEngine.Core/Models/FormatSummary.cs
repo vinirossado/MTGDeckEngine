@@ -19,7 +19,8 @@ public sealed record FormatStaple(
     string OracleId,
     string Name,
     decimal? PriceEur,
-    int DeckCount);
+    int DeckCount,
+    string? ImageUrl = null);
 
 public sealed record CommanderSummary(
     string CommanderSlug,
