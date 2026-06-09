@@ -9,4 +9,5 @@ public sealed record CardDto(
     string? OracleText,
     decimal? PriceEur,
     decimal? PriceUsd,
-    bool CommanderLegal);
+    bool CommanderLegal,
+    string? ImageUrl = null);

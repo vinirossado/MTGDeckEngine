@@ -9,6 +9,7 @@ export interface CardRecommendation {
   synergyScore: number | null;
   priceEur: number | null;
   topCutAppearances: number | null;
+  imageUrl: string | null;
 }
 
 export interface CommanderMeta {

@@ -26,7 +26,8 @@ public static class ScryfallToRdfMapper
             OracleText: c.OracleText,
             PriceEur: priceEur,
             PriceUsd: priceUsd,
-            CommanderLegal: legal);
+            CommanderLegal: legal,
+            ImageUrl: c.ImageUris?.Normal ?? c.ImageUris?.Large ?? c.ImageUris?.Small);
     }
 
     public static void AssertCard(IGraph g, CardDto card)
@@ -54,6 +55,9 @@ public static class ScryfallToRdfMapper
             Assert(g, cardNode, "hasPriceEur", Decimal(g, eur));
         if (card.PriceUsd is decimal usd)
             Assert(g, cardNode, "hasPriceUsd", Decimal(g, usd));
+        if (!string.IsNullOrWhiteSpace(card.ImageUrl))
+            Assert(g, cardNode, "hasImageUrl",
+                g.CreateLiteralNode(card.ImageUrl!, new Uri(XmlSpecsHelper.XmlSchemaDataTypeAnyUri)));
         Assert(g, cardNode, "isCommanderLegal", Bool(g, card.CommanderLegal));
 
         foreach (var c in card.Colors)

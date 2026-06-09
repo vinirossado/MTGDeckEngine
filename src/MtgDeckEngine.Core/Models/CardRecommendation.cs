@@ -7,4 +7,5 @@ public sealed record CardRecommendation(
     decimal? InclusionPct,
     decimal? SynergyScore,
     decimal? PriceEur,
-    int? TopCutAppearances = null);
+    int? TopCutAppearances = null,
+    string? ImageUrl = null);

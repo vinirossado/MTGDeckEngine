@@ -16,7 +16,7 @@ import type { CardRecommendation } from '../api/api.types';
     <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
       <article *ngFor="let card of cards; trackBy: trackByOracleId"
                class="bg-panel border border-border2 rounded-xl overflow-hidden flex flex-col">
-        <img [src]="api.scryfallImageUrl(card.oracleId)"
+        <img [src]="card.imageUrl ?? api.scryfallImageUrl(card.oracleId)"
              [alt]="card.name"
              loading="lazy"
              class="w-full aspect-[488/680] object-cover bg-panel2"

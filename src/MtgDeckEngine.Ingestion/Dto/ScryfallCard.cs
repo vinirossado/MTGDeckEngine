@@ -12,6 +12,16 @@ public sealed class ScryfallCard
     [JsonPropertyName("oracle_text")] public string? OracleText { get; set; }
     [JsonPropertyName("prices")] public ScryfallPrices? Prices { get; set; }
     [JsonPropertyName("legalities")] public Dictionary<string, string>? Legalities { get; set; }
+    [JsonPropertyName("image_uris")] public ScryfallImageUris? ImageUris { get; set; }
+}
+
+public sealed class ScryfallImageUris
+{
+    [JsonPropertyName("small")] public string? Small { get; set; }
+    [JsonPropertyName("normal")] public string? Normal { get; set; }
+    [JsonPropertyName("large")] public string? Large { get; set; }
+    [JsonPropertyName("png")] public string? Png { get; set; }
+    [JsonPropertyName("art_crop")] public string? ArtCrop { get; set; }
 }
 
 public sealed class ScryfallPrices

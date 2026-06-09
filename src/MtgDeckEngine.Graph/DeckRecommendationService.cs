@@ -27,7 +27,8 @@ public sealed class DeckRecommendationService(IGraphRepository repo) : IDeckReco
                 InclusionPct:        Dec(row, "inclusion"),
                 SynergyScore:        Dec(row, "synergy"),
                 PriceEur:            Dec(row, "priceEur"),
-                TopCutAppearances:   topCut.HasValue ? (int)topCut.Value : null));
+                TopCutAppearances:   topCut.HasValue ? (int)topCut.Value : null,
+                ImageUrl:            Str(row, "imageUrl")));
         }
         return list;
     }
@@ -181,7 +182,7 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         sb.AppendLine("PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>");
         sb.AppendLine("PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>");
         sb.AppendLine();
-        sb.AppendLine("SELECT ?oracleId ?name ?categoryLabel ?inclusion ?synergy ?priceEur ?topCutCount WHERE {");
+        sb.AppendLine("SELECT ?oracleId ?name ?categoryLabel ?inclusion ?synergy ?priceEur ?topCutCount ?imageUrl WHERE {");
 
         // EDHREC context graph — required for Edhrec/All sources, optional for
         // Tournament source so we still find cards that EDHREC doesn't list.
@@ -197,6 +198,7 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         sb.AppendLine("        mtg:hasName     ?name ;");
         sb.AppendLine("        mtg:hasTypeLine ?typeLine .");
         sb.AppendLine("  OPTIONAL { ?card mtg:hasPriceEur ?priceEur }");
+        sb.AppendLine("  OPTIONAL { ?card mtg:hasImageUrl ?imageUrl }");
 
         // Tournament appearance subquery — counts distinct top-cut decks per card.
         if (includeTournamentCount)

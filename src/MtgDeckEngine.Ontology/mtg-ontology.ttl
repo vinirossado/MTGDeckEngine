@@ -56,6 +56,7 @@ mtg:hasOracleText      a owl:DatatypeProperty ; rdfs:domain mtg:Card ; rdfs:rang
 mtg:hasPriceEur        a owl:DatatypeProperty ; rdfs:domain mtg:Card ; rdfs:range xsd:decimal .
 mtg:hasPriceUsd        a owl:DatatypeProperty ; rdfs:domain mtg:Card ; rdfs:range xsd:decimal .
 mtg:isCommanderLegal   a owl:DatatypeProperty ; rdfs:domain mtg:Card ; rdfs:range xsd:boolean .
+mtg:hasImageUrl        a owl:DatatypeProperty ; rdfs:domain mtg:Card ; rdfs:range xsd:anyURI .
 mtg:inCategory         a owl:ObjectProperty   ; rdfs:domain mtg:Card ; rdfs:range mtg:Category .
 
 # EDHREC-derived, commander-scoped (placed inside a named graph per commander)
