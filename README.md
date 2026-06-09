@@ -63,6 +63,7 @@ roadmap, see [CLAUDE.md](CLAUDE.md).
 |---|---|---|
 | [.NET SDK](https://dotnet.microsoft.com/download) | 10.0+ | Required to build and run the API |
 | [Docker](https://docs.docker.com/get-docker/) | latest | Runs Fuseki and the API image |
+| [Node.js](https://nodejs.org/) | 18+ | Only needed for the Angular frontend |
 | [`jq`](https://stedolan.github.io/jq/) | any | Used by the SPARQL runner script (`bin/sparql`) |
 | [Zed](https://zed.dev) (optional) | latest | Project ships with `.zed/tasks.json` for one-click query runs |
 
@@ -83,6 +84,21 @@ curl 'http://localhost:5050/api/commanders/xyris-the-writhing-storm/recommendati
 
 That's the whole loop. The API runs on **http://localhost:5050** and Fuseki's
 admin UI is at **http://localhost:3030**.
+
+### Web UI (Angular)
+
+```bash
+cd frontend
+npm install         # first time only
+npm start           # ng serve at http://localhost:4200
+```
+
+A commander dropdown, preset query buttons ("Top 25 staples", "Best under €5",
+"Top 4 tournament cards under €5", "High-synergy archetype glue",
+"Build a €100 deck"), and a card grid that renders real Scryfall card art
+for each oracle id. The header has an **on-demand ingest** input — paste an
+EDHREC slug (`atraxa-praetors-voice`, `kinnan-bonder-prodigy`, …), click
+**+ Ingest**, wait ~30s, and the new commander is queryable.
 
 ### First-run ingestion (one-time)
 
