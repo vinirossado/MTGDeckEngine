@@ -16,8 +16,9 @@
         <input
           [ngModel]="newSlug()"
           (ngModelChange)="newSlug.set($event)"
-          placeholder="atraxa-praetors-voice"
-          class="bg-bg border border-border2 rounded px-3 py-1.5 text-sm w-72
+          placeholder="Atraxa, Praetors' Voice  —  or paste a slug"
+          title="Type the commander's full name OR an EDHREC slug. Either form works."
+          class="bg-bg border border-border2 rounded px-3 py-1.5 text-sm w-80
                  focus:outline-none focus:border-accent placeholder:text-muted/60"
           (keydown.enter)="ingestNew()" />
         <button
@@ -58,8 +59,11 @@
           </option>
         </select>
         <p class="mt-2 text-[11px] text-muted leading-snug">
-          Don't see your commander? Paste the EDHREC slug above and click
-          <span class="text-accent2">Ingest</span>.
+          Pick from commanders we've already ingested.
+          <br>
+          Don't see yours? Type its full name (e.g. <em>"Jaheira, Friend of the Forest"</em>)
+          or its EDHREC slug into the top bar and click
+          <span class="text-accent2">+ Ingest</span>. Takes ~30s.
         </p>
       </section>
 

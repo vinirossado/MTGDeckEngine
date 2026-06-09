@@ -60,9 +60,15 @@ export class MtgApiService {
   }
 
   // Scryfall — we don't keep card images in our store, just oracle ids.
-  // Hit Scryfall by oracle id for the image. They allow CORS, no auth, and
-  // they rate-limit at ~10 req/sec which the browser respects naturally.
+  //
+  // /cards/{id} expects Scryfall's *card id*, NOT the oracle id (those are
+  // different identifiers — oracle id is stable across printings, card id
+  // is per-printing). The right shape to fetch by oracle id is
+  // /cards/search?q=oracleid:... with format=image; Scryfall 302s to the
+  // image CDN which the browser caches normally.
   scryfallImageUrl(oracleId: string): string {
-    return `https://api.scryfall.com/cards/${oracleId}?format=image&version=normal`;
+    const q = encodeURIComponent(`oracleid:${oracleId}`);
+    return `https://api.scryfall.com/cards/search?q=${q}` +
+      `&format=image&version=normal&unique=cards`;
   }
 }

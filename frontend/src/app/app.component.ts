@@ -147,9 +147,23 @@ export class AppComponent {
       .subscribe(() => this.loading.set(false));
   }
 
+  /**
+   * Convert free-form input ("Jaheira, Friend of the Forest" or "JAHEIRA, friend of the forest")
+   * into EDHREC's slug format ("jaheira-friend-of-the-forest"). Idempotent on
+   * already-correct slugs.
+   */
+  private toSlug(input: string): string {
+    return input
+      .toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')   // strip diacritics
+      .replace(/['"]/g, '')                                // drop quotes
+      .replace(/[^a-z0-9]+/g, '-')                         // collapse non-alphanum to -
+      .replace(/^-+|-+$/g, '');                            // trim leading/trailing -
+  }
+
   /** Phase 6a — pull EDHREC + EDHTop16 data for a new commander on demand. */
   ingestNew(): void {
-    const slug = this.newSlug().trim();
+    const slug = this.toSlug(this.newSlug().trim());
     if (!slug) return;
     this.loading.set(true);
     this.status.set(`Ingesting ${slug}… (this can take 30s)`);
