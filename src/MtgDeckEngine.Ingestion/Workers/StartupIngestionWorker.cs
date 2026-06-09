@@ -15,6 +15,7 @@ public sealed class StartupIngestionWorker(
     IServiceProvider services,
     IGraphRepository repo,
     IOptions<IngestionOptions> opts,
+    IHostApplicationLifetime lifetime,
     ILogger<StartupIngestionWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken ct)
@@ -81,6 +82,17 @@ public sealed class StartupIngestionWorker(
         catch (Exception ex)
         {
             logger.LogError(ex, "Startup ingestion failed");
+        }
+        finally
+        {
+            // CronJob mode: exit the host so the container terminates with 0
+            // and Kubernetes records the job as Succeeded. Otherwise the API
+            // would stay up and the CronJob would never complete.
+            if (opts.Value.RunOnce)
+            {
+                logger.LogInformation("RunOnce=true — stopping host.");
+                lifetime.StopApplication();
+            }
         }
     }
 }

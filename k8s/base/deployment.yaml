@@ -33,16 +33,19 @@ spec:
                 name: mtg-deck-engine
             - secretRef:
                 name: mtg-deck-engine
-          # Readiness: only routable when the Neptune endpoint is reachable.
-          # Liveness intentionally pings the in-process /health (no DB call),
-          # so a transient Neptune outage doesn't cascade into pod restarts.
+          # Readiness probes the SPARQL endpoint (Neptune/Fuseki). Failing
+          # pulls the pod out of the LB but does NOT restart it -- so a
+          # transient triplestore blip doesn't trigger restart-loops.
           readinessProbe:
             httpGet:
-              path: /health
+              path: /health/ready
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 5
             failureThreshold: 3
+          # Liveness is in-process only -- keep it boring so we don't
+          # cascade-kill pods on a downstream outage.
           livenessProbe:
             httpGet:
               path: /health

@@ -1,9 +1,15 @@
 # MTG Deck Intelligence Engine
 
 A .NET 10 knowledge-graph engine that aggregates Magic: The Gathering deck data
-(EDHREC, Scryfall, and — coming soon — EDHTop16 / Spicerack) into a single RDF
-triplestore, and exposes a SPARQL-powered query API for deck recommendations,
-budget filtering, and competitive performance insights.
+(EDHREC, Scryfall, EDHTop16, TopDeck.gg) into a single RDF triplestore, and
+exposes a SPARQL-powered query API for deck recommendations, budget filtering,
+competitive performance insights, and (optionally) Claude-backed natural-language
+suggestions.
+
+> 📖 **Visual deep-dive:** [`docs/explainer.html`](docs/explainer.html) walks
+> through the whole project — RDF concepts, ontology, architecture, the
+> phase-by-phase journey, and how each external source becomes triples.
+> Open it locally with `open docs/explainer.html`.
 
 **Why it exists.** EDHREC shows *popularity*. EDHTop16 shows *tournament
 performance*. They are different signals. By fusing them in one knowledge graph

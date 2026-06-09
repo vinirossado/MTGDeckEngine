@@ -11,7 +11,6 @@ public sealed record RecommendationFilter(
     IReadOnlyList<string>? ExcludeCategories = null,
     IReadOnlyList<string>? IncludeOnlyCategories = null,
     int Limit = 50,
-    // Phase 2: tournament-derived filters.
     int? MinTopCutAppearances = null,
     int? MaxPlacement = null,
     RecommendationSource Source = RecommendationSource.All);

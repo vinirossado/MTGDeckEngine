@@ -24,4 +24,11 @@ public sealed class IngestionOptions
 
     /// <summary>Enable TopDeck.gg multi-format tournament ingestion (Phase 3).</summary>
     public bool EnableTopDeck { get; set; }
+
+    /// <summary>
+    /// When true, the worker stops the host after ingestion completes — used
+    /// by the k8s CronJob so the container exits cleanly instead of staying
+    /// up as an API. Default false (API stays up after ingest).
+    /// </summary>
+    public bool RunOnce { get; set; }
 }

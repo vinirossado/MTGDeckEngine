@@ -1,0 +1,73 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: build + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: ${{ runner.os }}-nuget-
+
+      - name: Restore
+        run: dotnet restore MtgDeckEngine.slnx
+
+      - name: Build
+        run: dotnet build MtgDeckEngine.slnx --no-restore --configuration Release --verbosity minimal
+
+      - name: Test
+        run: dotnet test MtgDeckEngine.slnx --no-build --configuration Release --logger "console;verbosity=normal"
+
+  helm-lint:
+    name: helm lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.15.0
+      - run: helm lint deploy/helm/mtg-deck-engine
+
+  k8s-validate:
+    name: kustomize build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build dev overlay
+        run: kubectl kustomize k8s/overlays/dev > /dev/null
+      - name: Build prod overlay
+        run: kubectl kustomize k8s/overlays/prod > /dev/null
+
+  terraform-validate:
+    name: terraform validate
+    runs-on: ubuntu-latest
+    continue-on-error: true   # advisory until a state backend is committed
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.0
+      - name: fmt (advisory)
+        run: terraform fmt -check -recursive terraform/ || echo "::warning::terraform fmt would change files"
+      - name: validate dev
+        run: |
+          cd terraform/envs/dev
+          terraform init -backend=false
+          terraform validate

@@ -40,7 +40,28 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.MapControllers();
+
+// Liveness: in-process only, never touches the DB. Keep this fast so a
+// transient SPARQL outage doesn't cascade into pod restarts.
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+
+// Readiness: actually probes the triplestore with a cheap SPARQL ASK.
+// k8s removes the pod from the LB when this fails, but does not restart it.
+app.MapGet("/health/ready", async (IGraphRepository repo, CancellationToken ct) =>
+{
+    try
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(TimeSpan.FromSeconds(3));
+        await repo.QueryAsync("ASK WHERE { ?s ?p ?o }", cts.Token);
+        return Results.Ok(new { status = "ready" });
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new { status = "not_ready", error = ex.Message },
+            statusCode: 503);
+    }
+});
 
 app.Run();
 
