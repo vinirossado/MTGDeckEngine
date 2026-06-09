@@ -15,6 +15,14 @@ builder.Configuration.AddJsonFile("appsettings.Local.json",
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
+// CORS — open in Development for the Angular dev server (ng serve, :4200).
+// In Production the frontend is served from the same origin, so no CORS is needed.
+const string DevCorsPolicy = "dev-frontend";
+builder.Services.AddCors(o => o.AddPolicy(DevCorsPolicy, p =>
+    p.WithOrigins("http://localhost:4200", "http://127.0.0.1:4200")
+     .AllowAnyHeader()
+     .AllowAnyMethod()));
+
 builder.Services.Configure<FusekiOptions>(builder.Configuration.GetSection(FusekiOptions.SectionName));
 
 builder.Services.AddHttpClient<FusekiGraphRepository>(c =>
@@ -37,6 +45,9 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
+
+if (app.Environment.IsDevelopment())
+    app.UseCors(DevCorsPolicy);
 
 app.UseHttpsRedirection();
 app.MapControllers();

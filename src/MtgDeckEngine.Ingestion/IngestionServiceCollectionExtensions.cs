@@ -61,6 +61,7 @@ public static class IngestionServiceCollectionExtensions
         services.AddScoped<CommanderIngestor>();
         services.AddScoped<EdhTop16Ingestor>();
         services.AddScoped<TopDeckIngestor>();
+        services.AddScoped<IngestionOrchestrator>();
         services.AddHostedService<StartupIngestionWorker>();
         return services;
     }
