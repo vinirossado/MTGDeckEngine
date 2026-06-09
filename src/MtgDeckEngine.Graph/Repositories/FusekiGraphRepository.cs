@@ -54,6 +54,15 @@ public sealed class FusekiGraphRepository : IGraphRepository
         await WriteAsync(g, namedGraphUri, ct).ConfigureAwait(false);
     }
 
+    public async Task DropGraphAsync(Uri namedGraphUri, CancellationToken ct)
+    {
+        // SILENT so it's a no-op (no error) when the graph doesn't exist yet —
+        // i.e. on the first ingest run for a commander.
+        var update = $"DROP SILENT GRAPH <{namedGraphUri.AbsoluteUri}>";
+        _logger.LogDebug("SPARQL UPDATE: {Update}", update);
+        await _updateClient.UpdateAsync(update, ct).ConfigureAwait(false);
+    }
+
     private static string BuildInsertData(IGraph graph, Uri? namedGraphUri)
     {
         using var writer = new StringWriter();

@@ -42,6 +42,17 @@ public sealed class InMemoryGraphRepository : IGraphRepository
         return WriteAsync(g, namedGraphUri, ct);
     }
 
+    public Task DropGraphAsync(Uri namedGraphUri, CancellationToken ct)
+    {
+        lock (_lock)
+        {
+            var name = new UriNode(namedGraphUri);
+            if (_store.HasGraph(name))
+                _store.Remove(name);
+        }
+        return Task.CompletedTask;
+    }
+
     public Task<SparqlResultSet> QueryAsync(string sparql, CancellationToken ct)
     {
         var query = _parser.ParseFromString(sparql);

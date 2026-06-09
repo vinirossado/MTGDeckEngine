@@ -88,6 +88,12 @@ public sealed class CommanderIngestor(
         var contextGraph = new RdfGraph();
         EdhrecToRdfMapper.AssertEntries(contextGraph, entries, nameToOracleId);
         var contextUri = new Uri(MtgVocab.CommanderContextUri(slug));
+
+        // Snapshot semantics: EDHREC inclusion %, synergy, etc. drift with
+        // every meta update. Drop the old graph before writing the new one
+        // so we don't accumulate near-duplicate triples (e.g. inclusion 74.58
+        // alongside 74.57) that would surface as visible duplicates in queries.
+        await repo.DropGraphAsync(contextUri, ct).ConfigureAwait(false);
         await repo.WriteAsync(contextGraph, contextUri, ct).ConfigureAwait(false);
 
         logger.LogInformation(
