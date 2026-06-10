@@ -197,7 +197,12 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         sb.AppendLine("  ?card mtg:hasOracleId ?oracleId ;");
         sb.AppendLine("        mtg:hasName     ?name ;");
         sb.AppendLine("        mtg:hasTypeLine ?typeLine .");
-        sb.AppendLine("  OPTIONAL { ?card mtg:hasPriceEur ?priceEur }");
+        // Many Scryfall cards have no EUR price (especially reserved-list / older
+        // singles); fall back to USD so budget queries still work for them.
+        // EUR≈USD for most ranges, so this is a good-enough proxy.
+        sb.AppendLine("  OPTIONAL { ?card mtg:hasPriceEur ?eurRaw }");
+        sb.AppendLine("  OPTIONAL { ?card mtg:hasPriceUsd ?usdRaw }");
+        sb.AppendLine("  BIND (COALESCE(?eurRaw, ?usdRaw) AS ?priceEur)");
         sb.AppendLine("  OPTIONAL { ?card mtg:hasImageUrl ?imageUrl }");
 
         // Tournament appearance subquery — counts distinct top-cut decks per card.
@@ -215,7 +220,15 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         }
 
         // Filters.
-        sb.AppendLine($"  FILTER (!BOUND(?priceEur) || ?priceEur <= \"{Fmt(maxPrice)}\"^^xsd:decimal)");
+        // Budget filter semantics: when the caller sets MaxPriceEur, treat
+        // unknown-price cards as "potentially expensive" and exclude them.
+        // Pre-fix bug: "Best under €5" was including ~€60 cards whose EUR
+        // price wasn't in Scryfall's data (BOUND was false → filter passed).
+        // The COALESCE(eur, usd) BIND above already turns "USD-only" cards
+        // into priced rows, so the remaining unbound cases really are
+        // unknown — drop them from explicit budget queries.
+        if (f.MaxPriceEur is not null)
+            sb.AppendLine($"  FILTER (BOUND(?priceEur) && ?priceEur <= \"{Fmt(maxPrice)}\"^^xsd:decimal)");
         if (!tourMode)
             sb.AppendLine($"  FILTER (BOUND(?inclusion) && ?inclusion >= \"{Fmt(minIncl)}\"^^xsd:decimal)");
         if (f.MinSynergy is not null)

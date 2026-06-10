@@ -105,10 +105,12 @@ SELECT ?oracleId ?name ?priceEur ?imageUrl (COUNT(DISTINCT ?deck) AS ?deckCount)
   ?deck mtg:containsCard ?card .
   ?card mtg:hasOracleId ?oracleId ;
         mtg:hasName     ?name .
-  OPTIONAL {{ ?card mtg:hasPriceEur ?priceEur }}
+  OPTIONAL {{ ?card mtg:hasPriceEur ?eurRaw }}
+  OPTIONAL {{ ?card mtg:hasPriceUsd ?usdRaw }}
+  BIND (COALESCE(?eurRaw, ?usdRaw) AS ?priceEur)
   OPTIONAL {{ ?card mtg:hasImageUrl ?imageUrl }}
   {placementFilter}
-  FILTER (!BOUND(?priceEur) || ?priceEur <= ""{Fmt(maxPrice)}""^^xsd:decimal)
+  {(maxPriceEur is null ? "" : $"FILTER (BOUND(?priceEur) && ?priceEur <= \"{Fmt(maxPrice)}\"^^xsd:decimal)")}
 }}
 GROUP BY ?oracleId ?name ?priceEur ?imageUrl
 HAVING (COUNT(DISTINCT ?deck) >= {minDeckCount})
