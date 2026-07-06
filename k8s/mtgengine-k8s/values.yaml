@@ -1,0 +1,3 @@
+# Hardcoded no template por enquanto. Adicionar overrides aqui depois.
+namespace:
+  active: mtgengine-k8s-green

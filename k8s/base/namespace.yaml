@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: mtg-deck-engine
-  labels:
-    app.kubernetes.io/part-of: mtg-deck-engine
