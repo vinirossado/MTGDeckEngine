@@ -52,6 +52,13 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.MapControllers();
 
+app.MapGet("/", () => Results.Ok(new
+{
+    message = "Hello from GREEN v2",
+    service = "MTG Deck Engine API",
+    docs = "/openapi/v1.json"
+}));
+
 // Liveness: in-process only, never touches the DB. Keep this fast so a
 // transient SPARQL outage doesn't cascade into pod restarts.
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));

@@ -13,7 +13,11 @@ public sealed record RecommendationFilter(
     int Limit = 50,
     int? MinTopCutAppearances = null,
     int? MaxPlacement = null,
-    RecommendationSource Source = RecommendationSource.All);
+    RecommendationSource Source = RecommendationSource.All,
+    // When false, cards need not have an EDHREC inclusion % to appear (the
+    // EDHREC context block becomes OPTIONAL). The budget builder sets this
+    // false so tournament-only staples and unpriced cards can still be drafted.
+    bool RequireInclusion = true);
 
 public enum RecommendationSource
 {
@@ -33,9 +37,11 @@ public interface IDeckRecommendationService
         CancellationToken ct);
 
     /// <summary>
-    /// Greedy budget deck builder: picks the top-inclusion 99 cards (plus the
-    /// commander) whose cumulative price ≤ <paramref name="totalBudgetEur"/>.
-    /// Respects per-card price cap and the same exclusion filters as recommendations.
+    /// Budget deck builder. Returns a complete ~99-card singleton deck (manabase
+    /// completed with basic lands) whose cumulative price stays within
+    /// <paramref name="totalBudgetEur"/>, maximising a blended win-rate proxy
+    /// (tournament top-cut appearances + EDHREC inclusion/synergy) via a
+    /// complete-then-upgrade greedy. Also attaches an estimated Commander Bracket.
     /// </summary>
     Task<BudgetDeck> BuildBudgetDeckAsync(
         string commanderSlug,
@@ -57,4 +63,5 @@ public sealed record BudgetDeck(
     string CommanderSlug,
     decimal TotalPriceEur,
     int CardCount,
-    IReadOnlyList<CardRecommendation> Cards);
+    IReadOnlyList<CardRecommendation> Cards,
+    DeckBracket? Bracket = null);

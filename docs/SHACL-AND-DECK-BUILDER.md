@@ -28,8 +28,8 @@ enters the loop.
                             │
                             ▼
                 ┌─────────────────────────┐
-                │ BuildBudgetDeckAsync    │ ──► 99-card deck
-                │   (quota-aware greedy)  │
+                │ BuildBudgetDeckAsync    │ ──► 99-card deck + bracket
+                │  (complete-then-upgrade)│
                 └─────────────────────────┘
                             ▲
                             │ never calls
@@ -82,44 +82,62 @@ in `BuildBudgetDeckAsync`. The algorithm:
 
 - EDHREC inclusion % + synergy (from the commander-scoped named graph)
 - Tournament top-cut appearances (from the default graph)
-- Card price + name + type + image URL (from global card data)
+- Card price + name + type line + colour identity + image URL (from global card data)
 
-with these filters applied as `FILTER (?priceEur <= 5)` and similar.
-The result is up to 500 candidate cards, **ranked by inclusion %**.
+For the budget builder the pool query sets `RequireInclusion = false`, so the
+EDHREC block is `OPTIONAL` — tournament-only staples and unpriced cards still
+surface. The result is up to 500 candidate cards.
 
-### Step 2 — C# greedy with type quotas
+### Step 2 — C# "complete-then-upgrade" greedy
 
-```csharp
-// Default quotas for a Commander deck.
-// Sum == 99 (the commander is the 100th).
-new DeckBuildQuotas(
-    Lands: 37, Ramp: 10, Draw: 10,
-    Removal: 8, Creatures: 20, Other: 14);
-```
-
-Pass 1 — fill each bucket up to its target:
+Each pool card gets a **blended win-rate proxy**, normalised across the pool
+(there is no true per-card win rate in the data):
 
 ```
-for each card in pool, in rank order:
-    bucket = Categorise(card)           // by EDHREC category label
-    limit  = QuotaFor(quotas, bucket)
-    if taken[bucket] < limit
-       AND running_total + card.price ≤ budget:
-         add card; running_total += price
+score = 0.6·norm(topCutAppearances) + 0.4·norm(inclusion%) + 0.1·norm(synergy)
 ```
 
-Pass 2 — top up to 99 with whatever scores highest under budget,
-regardless of bucket.
+Then, using the type quotas (`Lands 37, Ramp 10, Draw 10, Removal 8,
+Creatures 20, Other 14 = 99`):
+
+```
+Phase A — complete a legal deck cheaply (guarantees ~99):
+  • fill the 62 nonland slots with the CHEAPEST cards per role
+    (a second sweep guarantees the count), and
+  • complete the 37-slot manabase with synthesised BASIC lands (price €0)
+    in the deck's colour identity.
+  → deck is now complete and costs almost nothing.
+
+Phase B — upgrade within budget:
+  repeatedly apply the single most cost-efficient improving swap
+  (replace an in-deck card with a higher-score pool card of the same
+   slot type) while running_total stays ≤ budget.
+  → never drops below 99, never exceeds budget; the budget is spent on
+    the highest-win-rate-proxy cards that fit.
+```
+
+This fixes the old two-pass greedy, which spent the whole budget on the most
+*popular* (often priciest) cards first and returned only ~20 cards — basics
+could never enter the pool, so the manabase starved.
 
 That's the whole decision. **No SHACL involved at any step.**
 The "best" notion here is operational, not formal:
 
 | Signal | Source | Used as |
 |---|---|---|
-| Card popularity | EDHREC inclusion % | Primary rank |
-| Tournament viability | Top-cut count | Optional secondary rank when `source=Tournament` |
-| Cost ceiling | Per-card price + total budget | Hard filter |
-| Deck shape | Quota table | Soft per-bucket cap |
+| Card popularity | EDHREC inclusion % | 0.4 weight in blended score |
+| Tournament viability | Top-cut count | 0.6 weight in blended score |
+| Synergy | EDHREC synergy | 0.1 tiebreak |
+| Cost ceiling | Per-card price + total budget | Hard filter (Phase B swaps) |
+| Deck shape | Quota table | Soft per-role cap; basics complete the manabase |
+
+### Step 3 — estimated Commander Bracket
+
+After the 99 cards are assembled, `BracketEvaluator.Evaluate` derives an
+estimated Commander Bracket (1–5) from card names: the Game Changers list,
+mass land denial, and extra-turn spells. It is a **deterministic estimate** —
+two-card infinite combos are not detected (that needs a combo database such as
+Commander Spellbook), so treat the level as a floor, not a verdict.
 
 ## Where SHACL *could* legitimately help with deck-building
 
@@ -129,9 +147,9 @@ Three places, none of them implemented yet:
 
 After the greedy assembles 99 cards, we could run SHACL on the resulting
 deck graph to confirm it satisfies `CommanderDeckShape` (correct counts,
-exactly one commander). Today the greedy code has its own check
-(`if (chosen.Count >= 99) break;`) — SHACL would replace that with a
-declarative contract.
+exactly one commander). Today the builder guarantees the 99-card count
+imperatively (Phase A completes the deck with basics) — SHACL would replace
+that with a declarative contract.
 
 ### 2. Detect format violations from imported data
 
@@ -180,9 +198,11 @@ SHACL only knows yes/no.
 ## TL;DR
 
 - **SHACL = "this data is well-formed."** No selection, no ranking.
-- **The budget deck builder = greedy C# with type quotas.**
+- **The budget deck builder = complete-then-upgrade greedy C#** — completes a
+  legal 99-card deck cheaply (basics finish the manabase), then spends the
+  budget upgrading to the best cards by a blended win-rate proxy.
 - **SPARQL is the bridge** — it pulls the candidate pool with prices,
-  inclusion %, and tournament counts already joined.
+  inclusion %, tournament counts, type line, and colour identity already joined.
 - **Mixing these up is a recipe for confusion.** The W3C primers are
   blunt about the distinction; if you want a one-liner: *SHACL gates,
   SPARQL queries, code decides.*

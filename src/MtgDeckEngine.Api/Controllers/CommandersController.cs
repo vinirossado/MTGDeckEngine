@@ -61,8 +61,11 @@ public sealed class CommandersController(IDeckRecommendationService recs) : Cont
     }
 
     /// <summary>
-    /// Greedy budget deck builder. Picks the top-inclusion cards (within filter)
-    /// while cumulative price stays under <paramref name="totalBudgetEur"/>.
+    /// Budget deck builder. Returns a complete ~99-card deck (manabase completed
+    /// with basic lands) that maximises a blended win-rate proxy while cumulative
+    /// price stays within <paramref name="totalBudgetEur"/>, plus an estimated
+    /// Commander Bracket. <paramref name="maxCardPriceEur"/> optionally caps the
+    /// price of any single card.
     /// </summary>
     [HttpGet("{slug}/build-deck")]
     public async Task<ActionResult<BudgetDeck>> BuildDeck(

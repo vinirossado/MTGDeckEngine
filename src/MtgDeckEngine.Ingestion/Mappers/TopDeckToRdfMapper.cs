@@ -101,7 +101,7 @@ public static class TopDeckToRdfMapper
             }
             else
             {
-                foreach (var (name, _qty) in ParseTextDecklist(s.Decklist!))
+                foreach (var (name, _) in ParseTextDecklist(s.Decklist!))
                 {
                     if (scryfall.TryGetByName(name, out var card) && card.OracleId is { Length: > 0 })
                     {

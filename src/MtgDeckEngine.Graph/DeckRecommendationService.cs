@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using MtgDeckEngine.Core;
+using MtgDeckEngine.Core.Brackets;
 using MtgDeckEngine.Core.Interfaces;
 using MtgDeckEngine.Core.Models;
 using VDS.RDF;
@@ -28,7 +29,9 @@ public sealed class DeckRecommendationService(IGraphRepository repo) : IDeckReco
                 SynergyScore:        Dec(row, "synergy"),
                 PriceEur:            Dec(row, "priceEur"),
                 TopCutAppearances:   topCut.HasValue ? (int)topCut.Value : null,
-                ImageUrl:            Str(row, "imageUrl")));
+                ImageUrl:            Str(row, "imageUrl"),
+                TypeLine:            Str(row, "typeLine"),
+                ColorIdentity:       Str(row, "colorIdentity")));
         }
         return list;
     }
@@ -96,60 +99,232 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         RecommendationFilter filter,
         CancellationToken ct)
     {
-        // Quota-aware greedy: fetch a wide pool, bucket cards by EDHREC
-        // category, then fill each bucket up to its target before sweeping
-        // leftover budget across whatever scores highest.
-        var fatFilter = filter with { Limit = 500, ExcludeBasicLands = false };
-        var pool = await GetRecommendationsAsync(commanderSlug, fatFilter, ct);
+        // Fetch a wide pool WITHOUT the EDHREC-inclusion requirement so
+        // tournament-only staples and unpriced cards still surface.
+        var poolFilter = filter with
+        {
+            Limit = 500,
+            RequireInclusion = false,
+            ExcludeBasicLands = false,
+        };
+        var raw = await GetRecommendationsAsync(commanderSlug, poolFilter, ct);
 
+        // De-dupe by oracle id and drop any land-less/nameless junk. Nonbasic
+        // lands from the graph stay in the pool; basic lands are synthesised.
+        var pool = raw
+            .Where(c => !string.IsNullOrEmpty(c.OracleId) && !string.IsNullOrEmpty(c.Name))
+            .GroupBy(c => c.OracleId, StringComparer.Ordinal)
+            .Select(g => g.First())
+            .Where(c => !IsBasicLand(c))
+            .ToList();
+
+        var score = BuildScoreMap(pool);
+        var identity = DeckColorIdentity(pool);
         var quotas = DeckBuildQuotas.Default;
-        var taken = new Dictionary<DeckBucket, List<CardRecommendation>>();
-        foreach (DeckBucket b in Enum.GetValues<DeckBucket>())
-            taken[b] = new List<CardRecommendation>();
-        var seenOracleIds = new HashSet<string>(StringComparer.Ordinal);
+
+        var lands    = pool.Where(IsLand).ToList();
+        var nonlands = pool.Where(c => !IsLand(c)).ToList();
+
+        // ---- Phase A — complete a legal deck as cheaply as possible ----
+        // Manabase is all basics (€0); nonland slots take the cheapest cards per
+        // role so the deck reaches ~99 for essentially no cost. Phase B then
+        // spends the budget upgrading these fillers to the best cards that fit.
+        var chosen = new List<CardRecommendation>(99);
+        var inDeck = new HashSet<string>(StringComparer.Ordinal);
         var running = 0m;
 
-        // Pass 1 — fill each bucket up to its target.
-        foreach (var card in pool)
+        // Nonland skeleton: cheapest cards, honouring soft per-role targets, then
+        // a second sweep to guarantee the 62-card nonland count.
+        var nonlandTarget = quotas.Sum - quotas.Lands; // 62
+        var bucketCount = new Dictionary<DeckBucket, int>();
+        foreach (var card in nonlands.OrderBy(c => c.PriceEur ?? 0m))
         {
-            if (seenOracleIds.Contains(card.OracleId)) continue;
-            var bucket = Categorise(card);
-            var limit = QuotaFor(quotas, bucket);
-            if (taken[bucket].Count >= limit) continue;
-            var price = card.PriceEur ?? 0m;
-            if (running + price > totalBudgetEur) continue;
-            taken[bucket].Add(card);
-            seenOracleIds.Add(card.OracleId);
-            running += price;
+            if (chosen.Count >= nonlandTarget) break;
+            var bucket = NonlandBucket(card);
+            var target = QuotaFor(quotas, bucket);
+            if (bucketCount.GetValueOrDefault(bucket) >= target) continue;
+            if (!TryTake(card, totalBudgetEur, chosen, inDeck, ref running)) continue;
+            bucketCount[bucket] = bucketCount.GetValueOrDefault(bucket) + 1;
+        }
+        foreach (var card in nonlands.OrderBy(c => c.PriceEur ?? 0m))
+        {
+            if (chosen.Count >= nonlandTarget) break;
+            TryTake(card, totalBudgetEur, chosen, inDeck, ref running);
         }
 
-        // Pass 2 — top up to 99 with whatever's left within budget.
-        var chosen = taken.Values.SelectMany(v => v).ToList();
-        foreach (var card in pool)
-        {
-            if (chosen.Count >= 99) break;
-            if (!seenOracleIds.Add(card.OracleId)) continue;
-            var price = card.PriceEur ?? 0m;
-            if (running + price > totalBudgetEur) continue;
-            chosen.Add(card);
-            running += price;
-        }
-        return new BudgetDeck(commanderSlug, running, chosen.Count, chosen);
+        // Manabase: fill the land quota entirely with basics (free) for now.
+        var basics = BuildBasics(identity, quotas.Lands);
+        chosen.AddRange(basics);
+
+        // ---- Phase B — upgrade within budget ----
+        // Repeatedly apply the single most cost-efficient improving swap (replace
+        // an in-deck card with a higher-score pool card of the same slot type)
+        // while staying within budget. Never drops below 99, never exceeds budget.
+        UpgradeWithinBudget(chosen, inDeck, lands, nonlands, score, totalBudgetEur, ref running);
+
+        var total = chosen.Sum(c => c.PriceEur ?? 0m);
+        var bracket = BracketEvaluator.Evaluate(chosen.Select(c => c.Name));
+        return new BudgetDeck(commanderSlug, total, chosen.Count, chosen, bracket);
     }
 
-    // Bucket EDHREC's free-form category labels into the small set of roles
-    // the quota model cares about. "Top Cards" / "High Synergy" become
-    // "Other" so the builder still drafts them when no specific role applies.
+    private static bool TryTake(
+        CardRecommendation card, decimal budget,
+        List<CardRecommendation> chosen, HashSet<string> inDeck, ref decimal running)
+    {
+        if (!inDeck.Add(card.OracleId)) return false;
+        var price = card.PriceEur ?? 0m;
+        if (running + price > budget) { inDeck.Remove(card.OracleId); return false; }
+        chosen.Add(card);
+        running += price;
+        return true;
+    }
+
+    // Greedy knapsack-style upgrade: each round pick the affordable improving
+    // swap with the best score-gain-per-euro and apply it. Lands upgrade to
+    // nonbasic lands from the pool; nonland cards upgrade within their role.
+    private static void UpgradeWithinBudget(
+        List<CardRecommendation> chosen, HashSet<string> inDeck,
+        List<CardRecommendation> lands, List<CardRecommendation> nonlands,
+        IReadOnlyDictionary<string, double> score, decimal budget, ref decimal running)
+    {
+        const int maxRounds = 400;
+        for (var round = 0; round < maxRounds; round++)
+        {
+            int bestOut = -1;
+            CardRecommendation? bestIn = null;
+            var bestValue = 0.0;
+
+            for (var i = 0; i < chosen.Count; i++)
+            {
+                var outCard = chosen[i];
+                var outScore = ScoreOf(score, outCard);
+                var candidates = IsLand(outCard) ? lands : NonlandsInRole(nonlands, outCard);
+                foreach (var inCard in candidates)
+                {
+                    if (inDeck.Contains(inCard.OracleId)) continue;
+                    var gain = ScoreOf(score, inCard) - outScore;
+                    if (gain <= 0) continue;
+                    var deltaCost = (inCard.PriceEur ?? 0m) - (outCard.PriceEur ?? 0m);
+                    if (running + deltaCost > budget) continue;
+                    // Prefer free/cheap gains: value = score gain per euro spent
+                    // (deltaCost ≤ 0 is treated as maximally efficient).
+                    var value = deltaCost <= 0 ? gain * 1_000_000 : gain / (double)deltaCost;
+                    if (value > bestValue)
+                    {
+                        bestValue = value;
+                        bestOut = i;
+                        bestIn = inCard;
+                    }
+                }
+            }
+
+            if (bestIn is null || bestOut < 0) break;
+            var replaced = chosen[bestOut];
+            inDeck.Remove(replaced.OracleId);
+            inDeck.Add(bestIn.OracleId);
+            running += (bestIn.PriceEur ?? 0m) - (replaced.PriceEur ?? 0m);
+            chosen[bestOut] = bestIn;
+        }
+    }
+
+    private static IEnumerable<CardRecommendation> NonlandsInRole(
+        List<CardRecommendation> nonlands, CardRecommendation outCard)
+    {
+        var role = NonlandBucket(outCard);
+        return nonlands.Where(c => NonlandBucket(c) == role);
+    }
+
+    private static double ScoreOf(IReadOnlyDictionary<string, double> score, CardRecommendation c)
+        => score.TryGetValue(c.OracleId, out var s) ? s : 0.0;
+
+    // Blended win-rate proxy, normalised across the pool: tournament top-cut
+    // appearances dominate, EDHREC inclusion % is the main fallback, synergy is
+    // a light tiebreak. There is no true per-card win rate in the data.
+    private static Dictionary<string, double> BuildScoreMap(IReadOnlyList<CardRecommendation> pool)
+    {
+        double maxTop = 0, maxIncl = 0, maxSyn = 0;
+        foreach (var c in pool)
+        {
+            maxTop  = Math.Max(maxTop,  c.TopCutAppearances ?? 0);
+            maxIncl = Math.Max(maxIncl, (double)(c.InclusionPct ?? 0m));
+            maxSyn  = Math.Max(maxSyn,  Math.Max(0, (double)(c.SynergyScore ?? 0m)));
+        }
+        var map = new Dictionary<string, double>(pool.Count, StringComparer.Ordinal);
+        foreach (var c in pool)
+        {
+            var top  = maxTop  > 0 ? (c.TopCutAppearances ?? 0) / maxTop : 0;
+            var incl = maxIncl > 0 ? (double)(c.InclusionPct ?? 0m) / maxIncl : 0;
+            var syn  = maxSyn  > 0 ? Math.Max(0, (double)(c.SynergyScore ?? 0m)) / maxSyn : 0;
+            map[c.OracleId] = 0.6 * top + 0.4 * incl + 0.1 * syn;
+        }
+        return map;
+    }
+
+    private static HashSet<char> DeckColorIdentity(IReadOnlyList<CardRecommendation> pool)
+    {
+        var colors = new HashSet<char>();
+        foreach (var c in pool)
+        {
+            if (string.IsNullOrEmpty(c.ColorIdentity)) continue;
+            foreach (var part in c.ColorIdentity.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                if (part.Length == 1 && "WUBRG".Contains(part[0]))
+                    colors.Add(part[0]);
+        }
+        return colors;
+    }
+
+    // Synthesise the basic-land manabase in the deck's colour identity. Colourless
+    // commanders get Wastes. Copies are distributed as evenly as possible.
+    private static List<CardRecommendation> BuildBasics(HashSet<char> identity, int count)
+    {
+        var list = new List<CardRecommendation>(count);
+        var order = new[] { 'W', 'U', 'B', 'R', 'G' }.Where(identity.Contains).ToList();
+        if (order.Count == 0) order.Add('C'); // colourless → Wastes
+        for (var i = 0; i < count; i++)
+        {
+            var code = order[i % order.Count];
+            var name = BasicLandName(code);
+            list.Add(new CardRecommendation(
+                OracleId:      $"basic-{name.ToLowerInvariant()}-{i}",
+                Name:          name,
+                Category:      "Lands",
+                InclusionPct:  null,
+                SynergyScore:  null,
+                PriceEur:      0m,
+                TypeLine:      $"Basic Land — {name}"));
+        }
+        return list;
+    }
+
+    private static string BasicLandName(char code) => code switch
+    {
+        'W' => "Plains",
+        'U' => "Island",
+        'B' => "Swamp",
+        'R' => "Mountain",
+        'G' => "Forest",
+        _   => "Wastes",
+    };
+
+    private static bool IsLand(CardRecommendation c)
+        => (c.TypeLine ?? "").Contains("Land", StringComparison.OrdinalIgnoreCase)
+        || (c.Category ?? "").Contains("land", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsBasicLand(CardRecommendation c)
+        => (c.TypeLine ?? "").Contains("Basic", StringComparison.OrdinalIgnoreCase);
+
+    // Roles the quota model cares about, for nonland cards. EDHREC's free-form
+    // labels ("Top Cards" / "High Synergy") collapse to "Other".
     private enum DeckBucket { Lands, Ramp, Draw, Removal, Creatures, Other }
 
-    private static DeckBucket Categorise(CardRecommendation card)
+    private static DeckBucket NonlandBucket(CardRecommendation card)
     {
         var c = (card.Category ?? "").ToLowerInvariant();
-        if (c.Contains("land")) return DeckBucket.Lands;
         if (c.Contains("ramp")) return DeckBucket.Ramp;
         if (c.Contains("card draw") || c == "draw") return DeckBucket.Draw;
         if (c.Contains("removal") || c.Contains("interaction")) return DeckBucket.Removal;
-        if (c.Contains("creature")) return DeckBucket.Creatures;
+        var t = (card.TypeLine ?? "").ToLowerInvariant();
+        if (c.Contains("creature") || t.Contains("creature")) return DeckBucket.Creatures;
         return DeckBucket.Other;
     }
 
@@ -176,34 +351,60 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         var includeTournamentCount = tourMode || allMode
                                      || f.MinTopCutAppearances is not null
                                      || f.MaxPlacement is not null;
+        // When inclusion is optional the EDHREC context block is wrapped in
+        // OPTIONAL and the inclusion floor filter is skipped — used by the
+        // budget builder so tournament-only / unpriced cards still surface.
+        var inclusionOptional = tourMode || !f.RequireInclusion;
 
         var sb = new StringBuilder();
         sb.AppendLine($"PREFIX mtg:  <{MtgVocab.Namespace}>");
         sb.AppendLine("PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>");
         sb.AppendLine("PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>");
         sb.AppendLine();
-        sb.AppendLine("SELECT ?oracleId ?name ?categoryLabel ?inclusion ?synergy ?priceEur ?topCutCount ?imageUrl WHERE {");
+        sb.AppendLine("SELECT ?oracleId ?name ?categoryLabel ?inclusion ?synergy ?priceEur ?topCutCount ?imageUrl ?typeLine ?colorIdentity WHERE {");
 
-        // EDHREC context graph — required for Edhrec/All sources, optional for
-        // Tournament source so we still find cards that EDHREC doesn't list.
-        if (tourMode) sb.AppendLine("  OPTIONAL {");
+        // EDHREC context graph — required for Edhrec/All sources, optional when
+        // inclusion is not required (Tournament source or the budget builder).
+        if (inclusionOptional) sb.AppendLine("  OPTIONAL {");
         sb.AppendLine($"  GRAPH <{ctx}> {{");
         sb.AppendLine("    ?card mtg:hasInclusionPct ?inclusion .");
         sb.AppendLine("    OPTIONAL { ?card mtg:hasSynergyScore ?synergy }");
-        sb.AppendLine("    OPTIONAL { ?card mtg:inCategory ?cat . OPTIONAL { ?cat rdfs:label ?categoryLabel } }");
         sb.AppendLine("  }");
-        if (tourMode) sb.AppendLine("  }");
+        if (inclusionOptional) sb.AppendLine("  }");
 
         sb.AppendLine("  ?card mtg:hasOracleId ?oracleId ;");
         sb.AppendLine("        mtg:hasName     ?name ;");
         sb.AppendLine("        mtg:hasTypeLine ?typeLine .");
-        // Many Scryfall cards have no EUR price (especially reserved-list / older
-        // singles); fall back to USD so budget queries still work for them.
-        // EUR≈USD for most ranges, so this is a good-enough proxy.
-        sb.AppendLine("  OPTIONAL { ?card mtg:hasPriceEur ?eurRaw }");
-        sb.AppendLine("  OPTIONAL { ?card mtg:hasPriceUsd ?usdRaw }");
-        sb.AppendLine("  BIND (COALESCE(?eurRaw, ?usdRaw) AS ?priceEur)");
-        sb.AppendLine("  OPTIONAL { ?card mtg:hasImageUrl ?imageUrl }");
+        // Price and image can each have SEVERAL triples per card (repeated
+        // ingestion over time / multiple printings). Fold them to one value per
+        // card with grouped subqueries — inline OPTIONALs would cross-multiply
+        // the outer rows so LIMIT keeps only a handful of distinct cards.
+        // MIN price = the cheapest printing, which is the right budget semantic.
+        // Many cards have no EUR price (reserved-list / older singles); fall back
+        // to USD (EUR≈USD for most ranges) so budget queries still work.
+        sb.AppendLine("  OPTIONAL { SELECT ?card (MIN(?e) AS ?eurMin) WHERE { ?card mtg:hasPriceEur ?e } GROUP BY ?card }");
+        sb.AppendLine("  OPTIONAL { SELECT ?card (MIN(?u) AS ?usdMin) WHERE { ?card mtg:hasPriceUsd ?u } GROUP BY ?card }");
+        sb.AppendLine("  BIND (COALESCE(?eurMin, ?usdMin) AS ?priceEur)");
+        sb.AppendLine("  OPTIONAL { SELECT ?card (SAMPLE(?img) AS ?imageUrl) WHERE { ?card mtg:hasImageUrl ?img } GROUP BY ?card }");
+
+        // Colour identity as a comma-joined WUBRG string (e.g. "R,G,U"). Done as
+        // a grouped subquery so multiple hasColorIdentity triples collapse into
+        // one value instead of multiplying the outer rows.
+        sb.AppendLine("  OPTIONAL {");
+        sb.AppendLine("    SELECT ?card (GROUP_CONCAT(DISTINCT ?ci; SEPARATOR=\",\") AS ?colorIdentity) WHERE {");
+        sb.AppendLine("      ?card mtg:hasColorIdentity ?ciNode .");
+        sb.AppendLine("      BIND (STRAFTER(STR(?ciNode), \"color/\") AS ?ci)");
+        sb.AppendLine("    } GROUP BY ?card");
+        sb.AppendLine("  }");
+
+        // EDHREC category labels, comma-joined per card. Also a grouped subquery:
+        // a card sits in several categories, and joining inCategory inline would
+        // multiply the outer rows (so LIMIT would keep only a few distinct cards).
+        sb.AppendLine("  OPTIONAL {");
+        sb.AppendLine($"    SELECT ?card (GROUP_CONCAT(DISTINCT ?lbl; SEPARATOR=\",\") AS ?categoryLabel) WHERE {{");
+        sb.AppendLine($"      GRAPH <{ctx}> {{ ?card mtg:inCategory ?cat . OPTIONAL {{ ?cat rdfs:label ?lbl }} }}");
+        sb.AppendLine("    } GROUP BY ?card");
+        sb.AppendLine("  }");
 
         // Tournament appearance subquery — counts distinct top-cut decks per card.
         if (includeTournamentCount)
@@ -229,23 +430,32 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         // unknown — drop them from explicit budget queries.
         if (f.MaxPriceEur is not null)
             sb.AppendLine($"  FILTER (BOUND(?priceEur) && ?priceEur <= \"{Fmt(maxPrice)}\"^^xsd:decimal)");
-        if (!tourMode)
+        if (!inclusionOptional)
             sb.AppendLine($"  FILTER (BOUND(?inclusion) && ?inclusion >= \"{Fmt(minIncl)}\"^^xsd:decimal)");
+        // When inclusion isn't required, still keep the pool commander-relevant:
+        // a card must be in this commander's EDHREC context OR appear in one of
+        // its tournament decks — otherwise the pool is the entire card database.
+        else
+            sb.AppendLine("  FILTER (BOUND(?inclusion) || BOUND(?topCutCount))");
         if (f.MinSynergy is not null)
             sb.AppendLine($"  FILTER (BOUND(?synergy) && ?synergy >= \"{Fmt(minSyn)}\"^^xsd:decimal)");
         if (f.ExcludeLands)
             sb.AppendLine("  FILTER (!CONTAINS(?typeLine, \"Land\"))");
         if (f.ExcludeBasicLands)
             sb.AppendLine("  FILTER (!CONTAINS(?typeLine, \"Basic Land\"))");
+        // categoryLabel is now a comma-joined string (a card spans several
+        // categories), so match with CONTAINS rather than IN.
         if (f.ExcludeCategories is { Count: > 0 })
         {
-            var blocklist = string.Join(", ", f.ExcludeCategories.Select(c => $"\"{c}\""));
-            sb.AppendLine($"  FILTER (!BOUND(?categoryLabel) || !(?categoryLabel IN ({blocklist})))");
+            var blocked = string.Join(" && ",
+                f.ExcludeCategories.Select(c => $"!CONTAINS(?categoryLabel, \"{c}\")"));
+            sb.AppendLine($"  FILTER (!BOUND(?categoryLabel) || ({blocked}))");
         }
         if (f.IncludeOnlyCategories is { Count: > 0 })
         {
-            var allowlist = string.Join(", ", f.IncludeOnlyCategories.Select(c => $"\"{c}\""));
-            sb.AppendLine($"  FILTER (BOUND(?categoryLabel) && ?categoryLabel IN ({allowlist}))");
+            var allowed = string.Join(" || ",
+                f.IncludeOnlyCategories.Select(c => $"CONTAINS(?categoryLabel, \"{c}\")"));
+            sb.AppendLine($"  FILTER (BOUND(?categoryLabel) && ({allowed}))");
         }
         if (f.MinTopCutAppearances is not null)
             sb.AppendLine($"  FILTER (BOUND(?topCutCount) && ?topCutCount >= {f.MinTopCutAppearances.Value})");

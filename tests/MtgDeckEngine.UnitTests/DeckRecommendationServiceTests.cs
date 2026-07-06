@@ -54,4 +54,46 @@ public class DeckRecommendationServiceTests
         Assert.Equal(3.20m, results[0].PriceEur);
         Assert.Equal(78m, results[0].InclusionPct);
     }
+
+    // Regression: a card ingested repeatedly (several prices/images) and sitting
+    // in multiple EDHREC categories used to multiply the result rows, so LIMIT
+    // kept only a few distinct cards and the deck builder starved. The query now
+    // folds these to one row per card, taking the cheapest (MIN) price.
+    [Fact]
+    public async Task Deduplicates_cards_with_multiple_prices_and_categories()
+    {
+        var repo = new InMemoryGraphRepository();
+        var slug = "xyris-the-writhing-storm";
+
+        var global = new RdfGraph();
+        // Same oracle id ingested twice → two prices + two images on one node.
+        ScryfallToRdfMapper.AssertCard(global, new CardDto(
+            "oid-1", "Windfall", new[] { "U" }, new[] { "U" }, "Sorcery",
+            null, 5.50m, 6.00m, true, "http://img/a"));
+        ScryfallToRdfMapper.AssertCard(global, new CardDto(
+            "oid-1", "Windfall", new[] { "U" }, new[] { "U" }, "Sorcery",
+            null, 3.20m, 4.00m, true, "http://img/b"));
+        await repo.WriteAsync(global, null, default);
+
+        // Same card in two EDHREC categories.
+        var entries = new[]
+        {
+            new EdhrecCardEntry("Windfall", slug, "wheel", 78m, 2.1m, 1000, 1200) { CategoryLabel = "Wheels" },
+            new EdhrecCardEntry("Windfall", slug, "draw",  78m, 2.1m, 1000, 1200) { CategoryLabel = "Card Draw" },
+        };
+        var nameToId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Windfall"] = "oid-1",
+        };
+        var ctx = new RdfGraph();
+        EdhrecToRdfMapper.AssertEntries(ctx, entries, nameToId);
+        await repo.WriteAsync(ctx, new Uri(MtgVocab.CommanderContextUri(slug)), default);
+
+        var svc = new DeckRecommendationService(repo);
+        var results = await svc.GetRecommendationsAsync(
+            slug, new RecommendationFilter(ExcludeBasicLands: false, Limit: 50), default);
+
+        Assert.Single(results);                    // one row, not 2×2 = four
+        Assert.Equal(3.20m, results[0].PriceEur);  // cheapest printing
+    }
 }

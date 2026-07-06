@@ -1,4 +1,5 @@
 <Solution>
+  <Folder Name="/k8s/" />
   <Folder Name="/src/">
     <Project Path="src/MtgDeckEngine.Ai/MtgDeckEngine.Ai.csproj" />
     <Project Path="src/MtgDeckEngine.Api/MtgDeckEngine.Api.csproj" />

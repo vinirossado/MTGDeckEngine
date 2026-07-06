@@ -6,7 +6,6 @@ public static class MtgVocab
 
     public static string Class(string local) => Namespace + local;
     public static string Property(string local) => Namespace + local;
-
     public static string CardUri(string oracleId) => $"{Namespace}card/{oracleId}";
     public static string CommanderUri(string slug) => $"{Namespace}commander/{slug}";
     public static string DeckUri(string source, string sourceId) => $"{Namespace}deck/{source}/{sourceId}";
