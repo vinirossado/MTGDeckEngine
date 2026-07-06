@@ -10,6 +10,8 @@ export interface CardRecommendation {
   priceEur: number | null;
   topCutAppearances: number | null;
   imageUrl: string | null;
+  typeLine?: string | null;
+  colorIdentity?: string | null;
 }
 
 export interface CommanderMeta {
@@ -24,11 +26,23 @@ export interface CommanderMeta {
   latestTopCutDate: string | null;
 }
 
+export interface DeckBracket {
+  level: number;
+  label: string;
+  gameChangerCount: number;
+  gameChangersFound: string[];
+  hasMassLandDenial: boolean;
+  hasExtraTurns: boolean;
+  reasons: string[];
+  isEstimate: boolean;
+}
+
 export interface BudgetDeck {
   commanderSlug: string;
   totalPriceEur: number;
   cardCount: number;
   cards: CardRecommendation[];
+  bracket: DeckBracket | null;
 }
 
 export interface CommanderSummary {

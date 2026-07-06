@@ -16,7 +16,7 @@ import type { CardRecommendation } from '../api/api.types';
     <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
       <article *ngFor="let card of cards; trackBy: trackByOracleId"
                class="bg-panel border border-border2 rounded-xl overflow-hidden flex flex-col">
-        <img [src]="card.imageUrl ?? api.scryfallImageUrl(card.oracleId)"
+        <img [src]="imgSrc(card)"
              [alt]="card.name"
              loading="lazy"
              class="w-full aspect-[488/680] object-cover bg-panel2"
@@ -57,6 +57,19 @@ export class CardGridComponent {
   readonly api = inject(MtgApiService);
 
   trackByOracleId = (_: number, c: CardRecommendation) => c.oracleId;
+
+  // Synthesised basic lands (oracleId "basic-<name>-<n>") aren't real Scryfall
+  // cards, so skip the doomed lookup and show a labelled placeholder directly.
+  imgSrc(card: CardRecommendation): string {
+    if (card.oracleId?.startsWith('basic-')) {
+      return 'data:image/svg+xml;utf8,' + encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 680">' +
+        '<rect width="100%" height="100%" fill="#18253c"/>' +
+        `<text x="50%" y="50%" font-family="sans-serif" font-size="40" fill="#93a3bd"` +
+        ` text-anchor="middle" dy=".3em">${card.name}</text></svg>`);
+    }
+    return card.imageUrl ?? this.api.scryfallImageUrl(card.oracleId);
+  }
 
   onImageError(ev: Event) {
     (ev.target as HTMLImageElement).src =

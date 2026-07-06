@@ -97,6 +97,34 @@
         </p>
       </section>
 
+      <!-- Deck builder (commander mode) -->
+      <section *ngIf="mode() === 'commander'"
+               class="bg-panel border border-border2 rounded-xl p-4">
+        <h2 class="text-xs uppercase tracking-wider text-muted mb-3">Deck builder</h2>
+        <label class="text-[11px] text-muted">Total budget (€)</label>
+        <div class="flex items-center gap-2 mt-1">
+          <input
+            type="number" min="1" step="10"
+            [ngModel]="budgetEur()"
+            (ngModelChange)="budgetEur.set(+$event)"
+            (keydown.enter)="runBuildDeck()"
+            class="w-28 bg-bg border border-border2 rounded px-3 py-2 text-sm
+                   focus:outline-none focus:border-accent" />
+          <button
+            (click)="runBuildDeck()"
+            [disabled]="loading() || !(budgetEur() > 0)"
+            class="flex-1 bg-accent2/20 border border-accent2/40 text-accent2 rounded
+                   px-3 py-2 text-sm hover:bg-accent2/30 disabled:opacity-50">
+            Build deck
+          </button>
+        </div>
+        <p class="mt-2 text-[11px] text-muted leading-snug">
+          Builds a complete ~99-card deck within budget, ranked by a blended
+          win-rate proxy (tournament top-cut + EDHREC), manabase completed with
+          basic lands. Shows an estimated Commander Bracket.
+        </p>
+      </section>
+
       <!-- Preset queries -->
       <section class="bg-panel border border-border2 rounded-xl p-4">
         <h2 class="text-xs uppercase tracking-wider text-muted mb-3">Preset queries</h2>
@@ -172,16 +200,32 @@
 
       <!-- Deck summary banner (commander build-deck) -->
       <div *ngIf="deck() as d"
-           class="bg-accent2/10 border border-accent2/40 rounded-xl px-4 py-3 flex items-center gap-4">
+           class="bg-accent2/10 border border-accent2/40 rounded-xl px-4 py-3 flex items-start gap-4 flex-wrap">
         <div>
           <div class="text-xs text-muted uppercase tracking-wider">Budget Deck</div>
           <div class="text-base text-accent2 font-medium">
             {{ d.cardCount }} cards · €{{ d.totalPriceEur | number:'1.2-2' }}
           </div>
         </div>
-        <p class="text-xs text-muted ml-auto max-w-md">
-          Quota-aware greedy: Lands 37 · Ramp 10 · Draw 10 · Removal 8 ·
-          Creatures 20 · Other 14, top-up with leftover budget.
+
+        <!-- Bracket badge -->
+        <div *ngIf="d.bracket as b" class="flex items-start gap-2">
+          <div class="px-2.5 py-1 rounded-lg border text-sm font-semibold"
+               [class.bg-ok]="b.level <= 2" [class.text-bg]="b.level <= 2"
+               [class.bg-warn]="b.level === 3"
+               [class.bg-accent]="b.level >= 4"
+               [class.text-bg]="b.level >= 4"
+               title="Estimated Commander Bracket">
+            Bracket {{ b.level }} · {{ b.label }}
+          </div>
+          <ul class="text-[11px] text-muted leading-snug list-disc pl-4 max-w-md">
+            <li *ngFor="let r of b.reasons">{{ r }}</li>
+          </ul>
+        </div>
+
+        <p class="text-xs text-muted ml-auto max-w-xs">
+          Complete ~99-card deck within budget, ranked by a blended win-rate proxy;
+          manabase completed with basic lands.
         </p>
       </div>
 

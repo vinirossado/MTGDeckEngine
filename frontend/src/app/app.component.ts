@@ -38,6 +38,7 @@ export class AppComponent {
   readonly slug       = signal<string>('xyris-the-writhing-storm');
   readonly format     = signal<string>('EDH');
   readonly newSlug    = signal<string>('');
+  readonly budgetEur  = signal<number>(100);
   readonly status     = signal<string>('');
   readonly meta       = signal<CommanderMeta | null>(null);
   readonly formatMeta = signal<FormatMeta | null>(null);
@@ -85,12 +86,6 @@ export class AppComponent {
       label: 'High-synergy archetype glue',
       description: "Cards more common in *this* commander's decks than the meta.",
       run: () => this.runRecs({ minSynergy: 0.4, excludeBasicLands: true, limit: 25 }),
-    },
-    {
-      key: 'budget-deck-100',
-      label: 'Build a €100 deck',
-      description: 'Quota-aware greedy: 37 lands, 10 ramp, 10 draw, 8 removal…',
-      run: () => this.runBuildDeck(100, 15),
     },
   ];
 
@@ -228,17 +223,23 @@ export class AppComponent {
       .subscribe(() => this.loading.set(false));
   }
 
-  runBuildDeck(budget: number, perCardCap: number): void {
+  runBuildDeck(budget?: number, perCardCap?: number): void {
     if (!this.slug()) return;
+    const total = budget ?? this.budgetEur();
+    if (!(total > 0)) {
+      this.status.set('Enter a budget greater than €0.');
+      return;
+    }
     this.loading.set(true);
     this.cards.set([]);
     this.status.set('Building…');
-    this.api.buildDeck(this.slug(), budget, perCardCap)
+    this.api.buildDeck(this.slug(), total, perCardCap)
       .pipe(
         tap(d => {
           this.deck.set(d);
           this.cards.set(d.cards);
-          this.status.set(`${d.cardCount} cards · €${d.totalPriceEur.toFixed(2)}`);
+          const bracket = d.bracket ? ` · Bracket ${d.bracket.level} (${d.bracket.label})` : '';
+          this.status.set(`${d.cardCount} cards · €${d.totalPriceEur.toFixed(2)}${bracket}`);
         }),
         catchError(err => {
           this.status.set(`Error: ${err?.message ?? err}`);
