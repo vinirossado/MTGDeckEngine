@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using MtgDeckEngine.Core.Interfaces;
 using MtgDeckEngine.Ingestion.Http;
 using MtgDeckEngine.Ingestion.Workers;
 
@@ -57,6 +58,19 @@ public static class IngestionServiceCollectionExtensions
             if (!string.IsNullOrWhiteSpace(key))
                 c.DefaultRequestHeaders.Add("Authorization", key);
         });
+
+        services.AddHttpClient(CommanderSpellbookClient.HttpClientName, c =>
+        {
+            c.BaseAddress = new Uri("https://backend.commanderspellbook.com/");
+            c.DefaultRequestHeaders.Add("Accept", "application/json");
+            c.DefaultRequestHeaders.Add("User-Agent", "MtgDeckEngine/0.4 (+bracket)");
+            c.Timeout = TimeSpan.FromSeconds(30);
+        });
+        services.AddSingleton<ICommanderNameResolver, ScryfallCommanderNameResolver>();
+        services.AddSingleton<CommanderSpellbookClient>();
+        // Singleton: IDeckRecommendationService is a singleton and would
+        // otherwise capture a scoped bracket service.
+        services.AddSingleton<IBracketService, SpellbookBracketService>();
 
         services.AddScoped<CommanderIngestor>();
         services.AddScoped<EdhTop16Ingestor>();
