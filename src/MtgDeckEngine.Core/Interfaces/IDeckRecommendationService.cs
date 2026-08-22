@@ -50,6 +50,20 @@ public interface IDeckRecommendationService
         CancellationToken ct);
 
     /// <summary>
+    /// As above, but additionally constrained to stay at or below
+    /// <paramref name="maxBracket"/> (1–5). Cards the bracket forbids are kept
+    /// out of the pool and the Game Changer allowance is enforced during the
+    /// upgrade pass, so the build optimises within the bracket rather than
+    /// being graded after the fact. Null means unconstrained.
+    /// </summary>
+    Task<BudgetDeck> BuildBudgetDeckAsync(
+        string commanderSlug,
+        decimal totalBudgetEur,
+        RecommendationFilter filter,
+        int? maxBracket,
+        CancellationToken ct);
+
+    /// <summary>
     /// Tournament-derived commander meta: entry counts, top-cut counts, win rate.
     /// Combines EDHTop16 aggregate stats with derived counts from individual
     /// tournament entries we've ingested.
@@ -64,4 +78,8 @@ public sealed record BudgetDeck(
     decimal TotalPriceEur,
     int CardCount,
     IReadOnlyList<CardRecommendation> Cards,
-    DeckBracket? Bracket = null);
+    DeckBracket? Bracket = null,
+    // Printed card name for the slug. Carried on the response because callers
+    // cannot derive it: un-slugifying is lossy, and the commander list endpoint
+    // is capped, so a low-play commander simply is not in it.
+    string? CommanderName = null);

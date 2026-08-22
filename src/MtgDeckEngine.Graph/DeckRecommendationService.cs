@@ -8,8 +8,15 @@ using VDS.RDF;
 
 namespace MtgDeckEngine.Graph;
 
-public sealed class DeckRecommendationService(IGraphRepository repo) : IDeckRecommendationService
+// brackets is optional so unit tests can construct the service with just a
+// repository; when omitted the offline name-list estimator is used.
+public sealed class DeckRecommendationService(
+    IGraphRepository repo,
+    IBracketService? brackets = null,
+    ICommanderNameResolver? commanderNames = null) : IDeckRecommendationService
 {
+    private readonly IBracketService _brackets = brackets ?? new LocalBracketService();
+
     public async Task<IReadOnlyList<CardRecommendation>> GetRecommendationsAsync(
         string commanderSlug,
         RecommendationFilter filter,
@@ -21,6 +28,8 @@ public sealed class DeckRecommendationService(IGraphRepository repo) : IDeckReco
         foreach (var row in rs)
         {
             var topCut = Dec(row, "topCutCount");
+            var wins   = Dec(row, "wins");
+            var losses = Dec(row, "losses");
             list.Add(new CardRecommendation(
                 OracleId:            Str(row, "oracleId") ?? "",
                 Name:                Str(row, "name") ?? "",
@@ -29,6 +38,9 @@ public sealed class DeckRecommendationService(IGraphRepository repo) : IDeckReco
                 SynergyScore:        Dec(row, "synergy"),
                 PriceEur:            Dec(row, "priceEur"),
                 TopCutAppearances:   topCut.HasValue ? (int)topCut.Value : null,
+                TournamentWins:      wins.HasValue ? (int)wins.Value : null,
+                TournamentLosses:    losses.HasValue ? (int)losses.Value : null,
+                IsGameChanger:       Bool(row, "gameChanger"),
                 ImageUrl:            Str(row, "imageUrl"),
                 TypeLine:            Str(row, "typeLine"),
                 ColorIdentity:       Str(row, "colorIdentity")));
@@ -68,7 +80,6 @@ WHERE {{
   }}
 }}
 GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
-
         var rs = await repo.QueryAsync(sparql, ct).ConfigureAwait(false);
         if (rs.Count == 0)
         {
@@ -98,7 +109,19 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         decimal totalBudgetEur,
         RecommendationFilter filter,
         CancellationToken ct)
+        => await BuildBudgetDeckAsync(commanderSlug, totalBudgetEur, filter, null, ct)
+            .ConfigureAwait(false);
+
+    public async Task<BudgetDeck> BuildBudgetDeckAsync(
+        string commanderSlug,
+        decimal totalBudgetEur,
+        RecommendationFilter filter,
+        int? maxBracket,
+        CancellationToken ct)
     {
+        var constraint = maxBracket is int bracketTarget
+            ? BracketConstraint.For(bracketTarget)
+            : null;
         // Fetch a wide pool WITHOUT the EDHREC-inclusion requirement so
         // tournament-only staples and unpriced cards still surface.
         var poolFilter = filter with
@@ -116,6 +139,15 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
             .GroupBy(c => c.OracleId, StringComparer.Ordinal)
             .Select(g => g.First())
             .Where(c => !IsBasicLand(c))
+            // A card with no price in the graph cannot be budgeted. Treating it
+            // as EUR 0 (the old `PriceEur ?? 0m` behaviour) let unpriced staples
+            // like Force of Will and Tropical Island enter a "EUR 100" deck for
+            // free, so the reported total bore no relation to what the deck costs.
+            // Same semantic the recommendations budget filter already uses.
+            .Where(c => c.PriceEur is not null)
+            // Cards the target bracket forbids outright never enter the pool, so
+            // neither the skeleton nor the upgrade pass can pick them up.
+            .Where(c => constraint is null || !IsBannedByBracket(constraint, c))
             .ToList();
 
         var score = BuildScoreMap(pool);
@@ -160,11 +192,18 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         // Repeatedly apply the single most cost-efficient improving swap (replace
         // an in-deck card with a higher-score pool card of the same slot type)
         // while staying within budget. Never drops below 99, never exceeds budget.
-        UpgradeWithinBudget(chosen, inDeck, lands, nonlands, score, totalBudgetEur, ref running);
+        UpgradeWithinBudget(
+            chosen, inDeck, lands, nonlands, score, totalBudgetEur, constraint, ref running);
 
         var total = chosen.Sum(c => c.PriceEur ?? 0m);
-        var bracket = BracketEvaluator.Evaluate(chosen.Select(c => c.Name));
-        return new BudgetDeck(commanderSlug, total, chosen.Count, chosen, bracket);
+        var bracket = await _brackets
+            .EvaluateAsync(commanderSlug, chosen.Select(c => c.Name).ToList(), ct)
+            .ConfigureAwait(false);
+        var commanderName = commanderNames is null
+            ? null
+            : await commanderNames.ResolveAsync(commanderSlug, ct).ConfigureAwait(false);
+        return new BudgetDeck(
+            commanderSlug, total, chosen.Count, chosen, bracket, commanderName);
     }
 
     private static bool TryTake(
@@ -185,9 +224,16 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
     private static void UpgradeWithinBudget(
         List<CardRecommendation> chosen, HashSet<string> inDeck,
         List<CardRecommendation> lands, List<CardRecommendation> nonlands,
-        IReadOnlyDictionary<string, double> score, decimal budget, ref decimal running)
+        IReadOnlyDictionary<string, double> score, decimal budget,
+        BracketConstraint? constraint, ref decimal running)
     {
         const int maxRounds = 400;
+        // Game Changers are capped per bracket rather than banned, so the count
+        // has to be tracked as the deck changes. (Cards the bracket bans outright
+        // were already dropped from the pool.)
+        var gameChangers = constraint is null
+            ? 0
+            : chosen.Count(c => IsGameChanger(constraint, c));
         for (var round = 0; round < maxRounds; round++)
         {
             int bestOut = -1;
@@ -202,6 +248,12 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
                 foreach (var inCard in candidates)
                 {
                     if (inDeck.Contains(inCard.OracleId)) continue;
+                    // Respect the Game Changer budget: swapping a plain card for
+                    // a Game Changer is only allowed while under the cap.
+                    if (constraint is not null
+                        && IsGameChanger(constraint, inCard)
+                        && !IsGameChanger(constraint, outCard)
+                        && gameChangers >= constraint.MaxGameChangers) continue;
                     var gain = ScoreOf(score, inCard) - outScore;
                     if (gain <= 0) continue;
                     var deltaCost = (inCard.PriceEur ?? 0m) - (outCard.PriceEur ?? 0m);
@@ -220,12 +272,26 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
 
             if (bestIn is null || bestOut < 0) break;
             var replaced = chosen[bestOut];
+            if (constraint is not null)
+            {
+                if (IsGameChanger(constraint, bestIn)) gameChangers++;
+                if (IsGameChanger(constraint, replaced)) gameChangers--;
+            }
             inDeck.Remove(replaced.OracleId);
             inDeck.Add(bestIn.OracleId);
             running += (bestIn.PriceEur ?? 0m) - (replaced.PriceEur ?? 0m);
             chosen[bestOut] = bestIn;
         }
     }
+
+    // Prefer Scryfall's per-card flag — it tracks WotC's list automatically.
+    // The curated name list in BracketEvaluator only backstops cards ingested
+    // before the flag existed in the graph.
+    private static bool IsGameChanger(BracketConstraint c, CardRecommendation card)
+        => card.IsGameChanger || c.IsGameChanger(card.Name);
+
+    private static bool IsBannedByBracket(BracketConstraint c, CardRecommendation card)
+        => (c.MaxGameChangers == 0 && IsGameChanger(c, card)) || c.IsBanned(card.Name);
 
     private static IEnumerable<CardRecommendation> NonlandsInRole(
         List<CardRecommendation> nonlands, CardRecommendation outCard)
@@ -237,11 +303,31 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
     private static double ScoreOf(IReadOnlyDictionary<string, double> score, CardRecommendation c)
         => score.TryGetValue(c.OracleId, out var s) ? s : 0.0;
 
-    // Blended win-rate proxy, normalised across the pool: tournament top-cut
-    // appearances dominate, EDHREC inclusion % is the main fallback, synergy is
-    // a light tiebreak. There is no true per-card win rate in the data.
+    // How strongly a card's observed record is pulled toward the pool average.
+    // In units of games: a card with PriorGames games of evidence sits halfway
+    // between its own record and the pool mean. Commander tournament samples are
+    // small (a card in 3 decks might be 9-2 by luck), so this keeps low-evidence
+    // cards from topping the ranking.
+    private const double PriorGames = 20.0;
+
+    /// <summary>
+    /// Per-card score used to rank upgrades, 0–1. The dominant term is the
+    /// shrunk tournament win rate of the decks that played the card; top-cut
+    /// volume, EDHREC inclusion and synergy fill in where match records are
+    /// thin or absent.
+    /// </summary>
     private static Dictionary<string, double> BuildScoreMap(IReadOnlyList<CardRecommendation> pool)
     {
+        // Pool-wide prior: the aggregate win rate across every card with a
+        // record. Falls back to 0.5 when the graph has no tournament data.
+        double totalWins = 0, totalGames = 0;
+        foreach (var c in pool)
+        {
+            totalWins  += c.TournamentWins ?? 0;
+            totalGames += c.TournamentGames ?? 0;
+        }
+        var poolMean = totalGames > 0 ? totalWins / totalGames : 0.5;
+
         double maxTop = 0, maxIncl = 0, maxSyn = 0;
         foreach (var c in pool)
         {
@@ -249,13 +335,44 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
             maxIncl = Math.Max(maxIncl, (double)(c.InclusionPct ?? 0m));
             maxSyn  = Math.Max(maxSyn,  Math.Max(0, (double)(c.SynergyScore ?? 0m)));
         }
+
         var map = new Dictionary<string, double>(pool.Count, StringComparer.Ordinal);
         foreach (var c in pool)
         {
+            var games = (double)(c.TournamentGames ?? 0);
+            var wins  = (double)(c.TournamentWins ?? 0);
+
+            // Bayesian shrinkage toward the pool mean. With no games this is
+            // exactly poolMean, so a card with no record is neither rewarded
+            // nor punished — it just leans on the other signals below.
+            var shrunk = (wins + PriorGames * poolMean) / (games + PriorGames);
+
+            // Re-centre on the pool mean and rescale to 0–1 so that "average
+            // win rate" sits at 0.5 and the spread actually separates cards.
+            // Without this every card clusters near poolMean and the term
+            // stops discriminating.
+            var winTerm = Math.Clamp(0.5 + (shrunk - poolMean) * 2.0, 0.0, 1.0);
+
+            // Confidence in that term: 0 with no games, approaching 1 as the
+            // sample grows past the prior. Low-evidence cards therefore fall
+            // back to popularity rather than to a noisy win rate.
+            var confidence = games / (games + PriorGames);
+
             var top  = maxTop  > 0 ? (c.TopCutAppearances ?? 0) / maxTop : 0;
             var incl = maxIncl > 0 ? (double)(c.InclusionPct ?? 0m) / maxIncl : 0;
             var syn  = maxSyn  > 0 ? Math.Max(0, (double)(c.SynergyScore ?? 0m)) / maxSyn : 0;
-            map[c.OracleId] = 0.6 * top + 0.4 * incl + 0.1 * syn;
+
+            // The win term claims weight in proportion to its confidence; the
+            // rest of that weight reverts to the popularity signals.
+            var evidenceWeight = 0.50 * confidence;
+            var popularityWeight = 0.50 - evidenceWeight;
+
+            map[c.OracleId] =
+                  evidenceWeight   * winTerm
+                + popularityWeight * top
+                + 0.30 * top
+                + 0.15 * incl
+                + 0.05 * syn;
         }
         return map;
     }
@@ -361,7 +478,7 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         sb.AppendLine("PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>");
         sb.AppendLine("PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>");
         sb.AppendLine();
-        sb.AppendLine("SELECT ?oracleId ?name ?categoryLabel ?inclusion ?synergy ?priceEur ?topCutCount ?imageUrl ?typeLine ?colorIdentity WHERE {");
+        sb.AppendLine("SELECT ?oracleId ?name ?categoryLabel ?inclusion ?synergy ?priceEur ?topCutCount ?wins ?losses ?imageUrl ?typeLine ?colorIdentity ?gameChanger WHERE {");
 
         // EDHREC context graph — required for Edhrec/All sources, optional when
         // inclusion is not required (Tournament source or the budget builder).
@@ -386,6 +503,7 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         sb.AppendLine("  OPTIONAL { SELECT ?card (MIN(?u) AS ?usdMin) WHERE { ?card mtg:hasPriceUsd ?u } GROUP BY ?card }");
         sb.AppendLine("  BIND (COALESCE(?eurMin, ?usdMin) AS ?priceEur)");
         sb.AppendLine("  OPTIONAL { SELECT ?card (SAMPLE(?img) AS ?imageUrl) WHERE { ?card mtg:hasImageUrl ?img } GROUP BY ?card }");
+        sb.AppendLine("  OPTIONAL { ?card mtg:isGameChanger ?gameChanger }");
 
         // Colour identity as a comma-joined WUBRG string (e.g. "R,G,U"). Done as
         // a grouped subquery so multiple hasColorIdentity triples collapse into
@@ -406,14 +524,29 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         sb.AppendLine("    } GROUP BY ?card");
         sb.AppendLine("  }");
 
-        // Tournament appearance subquery — counts distinct top-cut decks per card.
+        // Tournament subquery — per card, across this commander's tournament
+        // decks: how many distinct decks played it, and the aggregate match
+        // record of those decks. Deck <-> entry is 1:1 (the deck URI is keyed by
+        // tournament + entry), so summing wins over rows sums them over entries.
+        //
+        // This is the actual win signal: EDHTop16 gives a Swiss and a bracket
+        // record per entry, which the ingestion mapper already asserts. Counting
+        // top-cut appearances alone answers "how often is this card played by
+        // good decks", not "how often do decks playing it win".
         if (includeTournamentCount)
         {
             var wrap = tourMode ? "" : "OPTIONAL ";
             sb.AppendLine($"  {wrap}{{");
-            sb.AppendLine("    SELECT ?card (COUNT(DISTINCT ?deck) AS ?topCutCount) WHERE {");
+            sb.AppendLine("    SELECT ?card (COUNT(DISTINCT ?deck) AS ?topCutCount)");
+            sb.AppendLine("                 (SUM(?entryWins) AS ?wins) (SUM(?entryLosses) AS ?losses) WHERE {");
             sb.AppendLine("      ?entry mtg:hasPlacement ?p ; mtg:hasDeck ?deck .");
             sb.AppendLine($"      ?deck  mtg:hasCommander <{commander}> ; mtg:containsCard ?card .");
+            sb.AppendLine("      OPTIONAL { ?entry mtg:hasWinsSwiss     ?ws }");
+            sb.AppendLine("      OPTIONAL { ?entry mtg:hasWinsBracket   ?wb }");
+            sb.AppendLine("      OPTIONAL { ?entry mtg:hasLossesSwiss   ?ls }");
+            sb.AppendLine("      OPTIONAL { ?entry mtg:hasLossesBracket ?lb }");
+            sb.AppendLine("      BIND (COALESCE(?ws, 0) + COALESCE(?wb, 0) AS ?entryWins)");
+            sb.AppendLine("      BIND (COALESCE(?ls, 0) + COALESCE(?lb, 0) AS ?entryLosses)");
             if (f.MaxPlacement is not null)
                 sb.AppendLine($"      FILTER (?p <= {f.MaxPlacement.Value})");
             sb.AppendLine("    } GROUP BY ?card");
@@ -462,13 +595,17 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         sb.AppendLine("}");
 
         sb.AppendLine(tourMode
-            ? "ORDER BY DESC(?topCutCount) DESC(?inclusion)"
+            ? "ORDER BY DESC(?wins) DESC(?topCutCount) DESC(?inclusion)"
             : allMode
                 ? "ORDER BY DESC(?topCutCount) DESC(?inclusion) DESC(?synergy)"
                 : "ORDER BY DESC(?inclusion) DESC(?synergy)");
         sb.AppendLine($"LIMIT {lim}");
         return sb.ToString();
     }
+
+    private static bool Bool(VDS.RDF.Query.ISparqlResult row, string var)
+        => row.HasBoundValue(var) && row[var] is ILiteralNode lit
+        && bool.TryParse(lit.Value, out var b) && b;
 
     private static string Fmt(decimal d) => d.ToString("0.############", CultureInfo.InvariantCulture);
 
