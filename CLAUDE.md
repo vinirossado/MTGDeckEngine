@@ -110,16 +110,31 @@ MtgDeckEngine/
 
 ### 1. Scryfall — Card Data (prices, oracle text, colours, legality)
 - **Base URL:** `https://api.scryfall.com`
-- **Auth:** None required
-- **Rate limit:** 50–100ms between requests (respect their docs)
+- **Auth:** None required. `User-Agent` **and** `Accept` headers are both
+  mandatory — `HttpClient` sends no User-Agent by default, so set it explicitly
+  on the named client registration.
+- **Rate limit:** 500ms (2/sec) for `/cards/search` and `/cards/named`;
+  100ms for all other methods.
 - **Key endpoints:**
   ```
   GET /cards/named?exact=Xyris, the Writhing Storm
   GET /cards/search?q=commander%3AXYRIS&format=json
-  GET /bulk-data   ← download full card database (~100MB JSON, use this for seed)
+  GET /cards/search?q=is%3Agamechanger   ← WotC Game Changers list (53 cards)
+  GET /bulk-data   ← index of bulk downloads (see below)
   ```
+- **Bulk data format (changed):** the plain-JSON-array `download_uri` /
+  `size` fields are **gone**. Entries now expose `jsonl_download_uri` and
+  `compressed_size` — a **gzipped JSON Lines** file (~78 MB gz, ~624 MB
+  decompressed for `default_cards`). `ScryfallBulkCache` decompresses on the
+  way to disk and sniffs array-vs-JSONL when reading, so older caches still load.
 - **Fields to extract:** `name`, `oracle_id`, `colors`, `color_identity`,
-  `prices.eur`, `prices.usd`, `type_line`, `oracle_text`, `legalities.commander`
+  `prices.eur`, `prices.usd`, `type_line`, `oracle_text`, `legalities.commander`,
+  `game_changer` (bool — WotC's official Game Changer flag, per card)
+- **Printing selection matters:** `default_cards` lists **every** printing.
+  Many are unpriced (gold-bordered, memorabilia, digital) and a few carry bogus
+  near-zero listings. `ScryfallBulkCache.PickPrinting` takes the cheapest
+  *purchasable paper* printing above 5% of that card's median price. Getting
+  this wrong makes expensive staples look free to the budget builder.
 - **Notes:** Use the bulk data download for initial seed; use individual card
   lookups for incremental updates. Oracle ID is the stable card identifier across printings.
 
@@ -420,6 +435,21 @@ GET  /api/cards/{oracleId}/swap-suggestions
      ?maxPriceEur=5
      → Budget alternatives in same category
 
+GET  /api/commanders/{slug}/build-deck
+     ?totalBudgetEur=150&maxBracket=3&maxCardPriceEur=20
+     → Complete 99-card deck within budget, capped at the given Commander
+       Bracket. Ranked by real tournament win rate (see below).
+
+GET    /api/decks                → saved decks, newest first (?commander=slug)
+GET    /api/decks/{id}           → one saved deck with its full card list
+GET    /api/decks/{id}/export    → text/plain "N Card Name" list (Moxfield/Archidekt)
+DELETE /api/decks/{id}           → delete a saved deck
+POST   /api/decks/build-and-save → build + persist in one call (what the UI uses)
+
+GET  /api/commanders/{slug}/build-deck/export
+     ?totalBudgetEur=120&maxBracket=3
+     → Same build, returned as a pasteable decklist instead of JSON
+
 GET  /api/ingest/trigger
      → Manually trigger ingestion cycle (dev only)
 
@@ -467,6 +497,17 @@ g.Assert(card, hasName,  g.CreateLiteralNode(name));
 g.Assert(card, g.CreateUriNode("mtg:hasPriceEur"),
                g.CreateLiteralNode(price.ToString(), new Uri(XmlSpecsHelper.XmlSchemaDataTypeDecimal)));
 ```
+
+### Fuseki request-size limit (bit us once)
+
+Fuseki posts SPARQL Update as an HTTP form, and Jetty rejects bodies over
+**20 MB** with `form too large` — which reaches the client as a bare HTTP 500
+with no hint of the cause. `FusekiGraphRepository.WriteAsync` therefore splits
+every write into ≤8 MB requests by serialised size. Callers must not try to
+batch around this themselves: `TopDeckIngestor` used to flush every 25
+tournaments, but a single large EDH event is tens of thousands of triples, so
+the batch was measured in the wrong unit and silently failed the entire
+TopDeck ingest.
 
 ### dotNetRDF snippet — querying via SparqlQueryClient
 

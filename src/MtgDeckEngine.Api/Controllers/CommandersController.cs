@@ -6,7 +6,9 @@ namespace MtgDeckEngine.Api.Controllers;
 
 [ApiController]
 [Route("api/commanders")]
-public sealed class CommandersController(IDeckRecommendationService recs) : ControllerBase
+public sealed class CommandersController(
+    IDeckRecommendationService recs,
+    ICommanderNameResolver commanderNames) : ControllerBase
 {
     /// <summary>
     /// Cards ranked by EDHREC inclusion + synergy for the given commander,
@@ -65,12 +67,14 @@ public sealed class CommandersController(IDeckRecommendationService recs) : Cont
     /// with basic lands) that maximises a blended win-rate proxy while cumulative
     /// price stays within <paramref name="totalBudgetEur"/>, plus an estimated
     /// Commander Bracket. <paramref name="maxCardPriceEur"/> optionally caps the
-    /// price of any single card.
+    /// price of any single card. <paramref name="maxBracket"/> (1–5) constrains
+    /// the build to stay at or below that Commander Bracket.
     /// </summary>
     [HttpGet("{slug}/build-deck")]
     public async Task<ActionResult<BudgetDeck>> BuildDeck(
         string slug,
         [FromQuery] decimal totalBudgetEur,
+        [FromQuery] int? maxBracket,
         [FromQuery] decimal? maxCardPriceEur,
         [FromQuery] decimal? minSynergy,
         [FromQuery] bool excludeBasicLands = false,
@@ -79,6 +83,8 @@ public sealed class CommandersController(IDeckRecommendationService recs) : Cont
     {
         if (totalBudgetEur <= 0)
             return BadRequest("totalBudgetEur must be > 0");
+        if (maxBracket is int b && b is < 1 or > 5)
+            return BadRequest("maxBracket must be between 1 and 5");
 
         var filter = new RecommendationFilter(
             MaxPriceEur:       maxCardPriceEur,
@@ -88,8 +94,36 @@ public sealed class CommandersController(IDeckRecommendationService recs) : Cont
             ExcludeBasicLands: excludeBasicLands,
             ExcludeCategories: Split(excludeCategories),
             Limit:             300);
-        var deck = await recs.BuildBudgetDeckAsync(slug, totalBudgetEur, filter, ct);
+        var deck = await recs.BuildBudgetDeckAsync(slug, totalBudgetEur, filter, maxBracket, ct);
         return Ok(deck);
+    }
+
+    /// <summary>
+    /// Build a deck and return it as plain "N Card Name" text rather than JSON —
+    /// the same parameters as build-deck, piped straight into a decklist you can
+    /// paste into Moxfield/Archidekt.
+    /// </summary>
+    [HttpGet("{slug}/build-deck/export")]
+    [Produces("text/plain")]
+    public async Task<IActionResult> BuildDeckExport(
+        string slug,
+        [FromQuery] decimal totalBudgetEur,
+        [FromQuery] int? maxBracket,
+        [FromQuery] decimal? maxCardPriceEur,
+        CancellationToken ct = default)
+    {
+        if (totalBudgetEur <= 0)
+            return BadRequest("totalBudgetEur must be > 0");
+        if (maxBracket is int b && b is < 1 or > 5)
+            return BadRequest("maxBracket must be between 1 and 5");
+
+        var filter = new RecommendationFilter(
+            MaxPriceEur:       maxCardPriceEur,
+            ExcludeBasicLands: false,
+            Limit:             300);
+        var deck = await recs.BuildBudgetDeckAsync(slug, totalBudgetEur, filter, maxBracket, ct);
+        var commanderName = deck.CommanderName ?? await commanderNames.ResolveAsync(slug, ct);
+        return Content(DeckTextExporter.ToText(deck.Cards, commanderName), "text/plain; charset=utf-8");
     }
 
     private static IReadOnlyList<string>? Split(string? csv)

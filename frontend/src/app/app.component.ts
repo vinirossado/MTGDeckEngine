@@ -10,6 +10,8 @@ import type {
   CommanderSummary,
   FormatMeta,
   FormatSummary,
+  SavedDeck,
+  SavedDeckSummary,
 } from './api/api.types';
 import { CardGridComponent } from './components/card-grid.component';
 
@@ -45,6 +47,101 @@ export class AppComponent {
   readonly cards      = signal<CardRecommendation[]>([]);
   readonly deck       = signal<BudgetDeck | null>(null);
   readonly loading    = signal<boolean>(false);
+
+  // null = no bracket cap (build the strongest deck the budget allows).
+  readonly maxBracket  = signal<number | null>(null);
+  readonly deckName    = signal<string>('');
+  readonly savedDecks  = signal<SavedDeckSummary[]>([]);
+  readonly showSaved   = signal<boolean>(false);
+  readonly showDecklist = signal<boolean>(false);
+  readonly copyLabel    = signal<string>('Copy decklist');
+
+  /**
+   * The deck rendered as plain "N Card Name" text, commander in a trailing
+   * block. Built client-side from the deck already on screen so the button is
+   * instant and always matches what is displayed — asking the API to rebuild
+   * could return a different list, since prices move between calls.
+   */
+  readonly decklistText = computed(() => {
+    const d = this.deck();
+    if (!d) return '';
+
+    const counts = new Map<string, number>();
+    for (const card of d.cards) {
+      const name = (card.name ?? '').trim();
+      if (!name) continue;
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+
+    const lines = [...counts.entries()]
+      .sort(([a], [b]) => a.localeCompare(b, 'en'))
+      .map(([name, n]) => `${n} ${name}`);
+
+    // The blank line before the commander is what tells importers it belongs in
+    // the command zone rather than the 99.
+    const commander = this.commanderName();
+    return commander
+      ? `${lines.join('\n')}\n\n1 ${commander}\n`
+      : `${lines.join('\n')}\n`;
+  });
+
+  readonly decklistLineCount = computed(
+    () => this.decklistText().split('\n').filter(l => l.trim().length > 0).length,
+  );
+
+  /**
+   * Printed name of the deck's commander. Comes from the API response rather
+   * than the commander dropdown: that list is capped at 500 and sorted by play
+   * count, so a low-play commander is simply absent from it and the export
+   * would silently lose its command-zone block.
+   */
+  private commanderName(): string | null {
+    const d = this.deck();
+    if (d?.commanderName) return d.commanderName;
+    const slug = d?.commanderSlug ?? this.slug();
+    return this.commanders().find(c => c.commanderSlug === slug)?.name ?? null;
+  }
+
+  toggleDecklist(): void {
+    this.showDecklist.set(!this.showDecklist());
+  }
+
+  async copyDecklist(): Promise<void> {
+    const text = this.decklistText();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      this.copyLabel.set('Copied ✓');
+    } catch {
+      // Clipboard API needs a secure context and permission; fall back to
+      // showing the list so the user can select it manually.
+      this.showDecklist.set(true);
+      this.copyLabel.set('Copy blocked — select below');
+    }
+    setTimeout(() => this.copyLabel.set('Copy decklist'), 2500);
+  }
+
+  downloadDecklist(): void {
+    const text = this.decklistText();
+    if (!text) return;
+    const slug = this.deck()?.commanderSlug ?? 'deck';
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${slug}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  readonly bracketOptions = [
+    { value: null, label: 'Any bracket' },
+    { value: 1, label: '1 — Exhibition' },
+    { value: 2, label: '2 — Core' },
+    { value: 3, label: '3 — Upgraded' },
+    { value: 4, label: '4 — Optimized' },
+    { value: 5, label: '5 — cEDH' },
+  ];
 
   readonly title = computed(() =>
     this.mode() === 'commander'
@@ -120,6 +217,106 @@ export class AppComponent {
     this.refreshCommanderList();
     this.refreshFormatList();
     this.fetchMeta();
+    this.refreshSavedDecks();
+  }
+
+  setMaxBracket(raw: string): void {
+    this.maxBracket.set(raw === '' || raw === 'null' ? null : Number(raw));
+  }
+
+  // ---- saved decks ----
+
+  refreshSavedDecks(): void {
+    this.api.listSavedDecks()
+      .pipe(catchError(() => of([] as SavedDeckSummary[])))
+      .subscribe(list => this.savedDecks.set(list));
+  }
+
+  toggleSaved(): void {
+    this.showSaved.set(!this.showSaved());
+    if (this.showSaved()) this.refreshSavedDecks();
+  }
+
+  /**
+   * Build and save in a single request. Doing it in two calls would rebuild the
+   * deck server-side and could persist a different list than the one on screen,
+   * since prices and tournament data move between calls.
+   */
+  buildAndSave(): void {
+    if (!this.slug()) return;
+    const total = this.budgetEur();
+    if (!(total > 0)) {
+      this.status.set('Enter a budget greater than EUR 0.');
+      return;
+    }
+    this.loading.set(true);
+    this.status.set('Building and saving...');
+    this.api.buildAndSave({
+      commanderSlug:  this.slug(),
+      totalBudgetEur: total,
+      maxBracket:     this.maxBracket(),
+      name:           this.deckName().trim() || null,
+    }).pipe(
+      tap(d => {
+        this.cards.set(d.cards);
+        this.deck.set({
+          commanderSlug: d.commanderSlug,
+          totalPriceEur: d.totalPriceEur,
+          cardCount:     d.cardCount,
+          cards:         d.cards,
+          bracket:       d.bracket,
+          commanderName: d.commanderName,
+        });
+        const bracket = d.bracket ? ` - Bracket ${d.bracket.level} (${d.bracket.label})` : '';
+        this.status.set(`Saved "${d.name}" - ${d.cardCount} cards - EUR ${d.totalPriceEur.toFixed(2)}${bracket}`);
+        this.deckName.set('');
+        this.refreshSavedDecks();
+        this.showSaved.set(true);
+      }),
+      catchError(err => {
+        this.status.set(`Save failed: ${err?.error ?? err?.message ?? err}`);
+        return of(null);
+      }),
+    ).subscribe(() => this.loading.set(false));
+  }
+
+  openSavedDeck(id: string): void {
+    this.loading.set(true);
+    this.status.set('Loading deck...');
+    this.api.getSavedDeck(id).pipe(
+      tap((d: SavedDeck) => {
+        this.slug.set(d.commanderSlug);
+        this.cards.set(d.cards);
+        this.deck.set({
+          commanderSlug: d.commanderSlug,
+          totalPriceEur: d.totalPriceEur,
+          cardCount:     d.cardCount,
+          cards:         d.cards,
+          bracket:       d.bracket,
+          commanderName: d.commanderName,
+        });
+        const bracket = d.bracket ? ` - Bracket ${d.bracket.level}` : '';
+        this.status.set(`${d.name} - ${d.cardCount} cards - EUR ${d.totalPriceEur.toFixed(2)}${bracket}`);
+      }),
+      catchError(err => {
+        this.status.set(`Error: ${err?.message ?? err}`);
+        return of(null);
+      }),
+    ).subscribe(() => this.loading.set(false));
+  }
+
+  deleteSavedDeck(id: string, event: Event): void {
+    event.stopPropagation();
+    this.api.deleteSavedDeck(id).pipe(
+      tap(() => {
+        this.status.set('Deck deleted.');
+        this.refreshSavedDecks();
+      }),
+      catchError(err => {
+        this.status.set(`Delete failed: ${err?.message ?? err}`);
+        return of(null);
+      }),
+    ).subscribe();
   }
 
   setMode(m: Mode): void {
@@ -233,7 +430,7 @@ export class AppComponent {
     this.loading.set(true);
     this.cards.set([]);
     this.status.set('Building…');
-    this.api.buildDeck(this.slug(), total, perCardCap)
+    this.api.buildDeck(this.slug(), total, perCardCap, this.maxBracket())
       .pipe(
         tap(d => {
           this.deck.set(d);

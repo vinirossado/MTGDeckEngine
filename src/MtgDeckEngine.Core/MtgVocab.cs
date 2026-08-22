@@ -16,6 +16,17 @@ public static class MtgVocab
     public static string CategoryUri(string slug) => $"{Namespace}category/{slug}";
     public static string CommanderContextUri(string slug) => $"{Namespace}context/{slug}";
 
+    /// <summary>A deck the user explicitly saved, as opposed to one ingested
+    /// from a tournament source.</summary>
+    public static string SavedDeckUri(string id) => $"{Namespace}deck/saved/{id}";
+
+    /// <summary>
+    /// Named graph holding every saved deck. Kept out of the default graph so
+    /// user decks never pollute tournament aggregates — a saved deck is not a
+    /// tournament result and must not be counted as one by the win-rate queries.
+    /// </summary>
+    public static string SavedDecksGraphUri() => $"{Namespace}graph/saved-decks";
+
     public static string Slugify(string input)
     {
         var lower = input.ToLowerInvariant();
