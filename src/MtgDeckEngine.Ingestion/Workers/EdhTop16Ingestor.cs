@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using MtgDeckEngine.Core;
 using MtgDeckEngine.Core.Interfaces;
 using MtgDeckEngine.Ingestion.Http;
+using MtgDeckEngine.Graph;
 using MtgDeckEngine.Ingestion.Mappers;
 using RdfGraph = VDS.RDF.Graph;
 
@@ -41,6 +42,12 @@ public sealed class EdhTop16Ingestor(
         if (commander is not null)
         {
             EdhTop16ToRdfMapper.AssertCommanderStats(statsGraph, slug, commander);
+            // These aggregates are recomputed upstream on every run, so the old
+            // values must go — otherwise the commander node ends up with one
+            // entry-count triple per ingestion and /meta reports an arbitrary one.
+            await MutableProperties.ClearAsync(
+                repo, [MtgVocab.CommanderUri(slug)], MutableProperties.CommanderStats, ct)
+                .ConfigureAwait(false);
             await repo.WriteAsync(statsGraph, namedGraphUri: null, ct).ConfigureAwait(false);
             logger.LogInformation(
                 "EDHTop16: stats — {Count} entries, {TopCuts} top-cuts, win {Win:P1}, conv {Conv:P1}, meta {Meta:P2}",

@@ -37,13 +37,56 @@ public sealed class FusekiGraphRepository : IGraphRepository
         return await _queryClient.QueryWithResultSetAsync(sparql, ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Fuseki posts SPARQL Update as a form, and Jetty rejects form bodies over
+    /// 20 MB with "form too large" — surfaced to the client as a bare HTTP 500.
+    /// Cap each request well under that; the graph is split across as many
+    /// requests as it takes.
+    /// </summary>
+    private const int MaxBytesPerUpdate = 8 * 1024 * 1024;
+
     public async Task WriteAsync(IGraph graph, Uri? namedGraphUri, CancellationToken ct)
     {
         if (graph.Triples.Count == 0) return;
 
-        var update = BuildInsertData(graph, namedGraphUri);
+        // Chunk by serialised size rather than triple count: triples vary from
+        // ~120 bytes to several KB (long oracle text, decklist URLs), so a
+        // fixed triple budget either wastes requests or still blows the limit.
+        var batch = new List<Triple>();
+        var batchBytes = 0;
+        var flushes = 0;
+
+        foreach (var triple in graph.Triples)
+        {
+            var size = NTriples.Format(triple).Length + 1;
+            if (batch.Count > 0 && batchBytes + size > MaxBytesPerUpdate)
+            {
+                await FlushAsync(batch, namedGraphUri, ct).ConfigureAwait(false);
+                flushes++;
+                batch.Clear();
+                batchBytes = 0;
+            }
+            batch.Add(triple);
+            batchBytes += size;
+        }
+        if (batch.Count > 0)
+        {
+            await FlushAsync(batch, namedGraphUri, ct).ConfigureAwait(false);
+            flushes++;
+        }
+
+        if (flushes > 1)
+            _logger.LogDebug(
+                "SPARQL UPDATE split into {Flushes} requests ({Triples} triples) → {Graph}",
+                flushes, graph.Triples.Count, namedGraphUri?.ToString() ?? "(default)");
+    }
+
+    private async Task FlushAsync(
+        IReadOnlyCollection<Triple> triples, Uri? namedGraphUri, CancellationToken ct)
+    {
+        var update = BuildInsertData(triples, namedGraphUri);
         _logger.LogDebug("SPARQL UPDATE: {Bytes} bytes, {Triples} triples → {Graph}",
-            update.Length, graph.Triples.Count, namedGraphUri?.ToString() ?? "(default)");
+            update.Length, triples.Count, namedGraphUri?.ToString() ?? "(default)");
         await _updateClient.UpdateAsync(update, ct).ConfigureAwait(false);
     }
 
@@ -63,7 +106,14 @@ public sealed class FusekiGraphRepository : IGraphRepository
         await _updateClient.UpdateAsync(update, ct).ConfigureAwait(false);
     }
 
-    private static string BuildInsertData(IGraph graph, Uri? namedGraphUri)
+    public async Task UpdateAsync(string sparqlUpdate, CancellationToken ct)
+    {
+        _logger.LogDebug("SPARQL UPDATE: {Bytes} bytes", sparqlUpdate.Length);
+        await _updateClient.UpdateAsync(sparqlUpdate, ct).ConfigureAwait(false);
+    }
+
+    private static string BuildInsertData(
+        IReadOnlyCollection<Triple> triples, Uri? namedGraphUri)
     {
         using var writer = new StringWriter();
         writer.Write("INSERT DATA { ");
@@ -73,7 +123,7 @@ public sealed class FusekiGraphRepository : IGraphRepository
             writer.Write(namedGraphUri.AbsoluteUri);
             writer.Write("> { ");
         }
-        foreach (var t in graph.Triples)
+        foreach (var t in triples)
         {
             writer.Write(NTriples.Format(t));
             writer.Write(' ');

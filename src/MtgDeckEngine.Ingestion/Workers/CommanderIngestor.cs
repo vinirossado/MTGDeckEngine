@@ -3,6 +3,7 @@ using MtgDeckEngine.Core;
 using MtgDeckEngine.Core.Interfaces;
 using MtgDeckEngine.Core.Models;
 using MtgDeckEngine.Ingestion.Http;
+using MtgDeckEngine.Graph;
 using MtgDeckEngine.Ingestion.Mappers;
 using VDS.RDF;
 using RdfGraph = VDS.RDF.Graph;
@@ -83,6 +84,11 @@ public sealed class CommanderIngestor(
         _ = delayMs; // no longer needed — cache lookups are local
         _ = scryfall; // kept on the type for future incremental lookups
 
+        // Prices drift, so drop the previous snapshot before writing the new
+        // one — otherwise both survive and MIN(?price) keeps quoting the old value.
+        await MutableProperties
+            .ClearAsync(repo, globalGraph, MutableProperties.Card, ct)
+            .ConfigureAwait(false);
         await repo.WriteAsync(globalGraph, namedGraphUri: null, ct).ConfigureAwait(false);
 
         var contextGraph = new RdfGraph();

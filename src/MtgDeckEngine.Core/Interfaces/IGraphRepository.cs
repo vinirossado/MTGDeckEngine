@@ -18,4 +18,11 @@ public interface IGraphRepository
     /// duplicate predicate values across re-ingests).
     /// </summary>
     Task DropGraphAsync(Uri namedGraphUri, CancellationToken ct);
+
+    /// <summary>
+    /// Run an arbitrary SPARQL 1.1 Update. Needed for targeted DELETE/WHERE —
+    /// <see cref="DropGraphAsync"/> is too blunt when only one subject inside a
+    /// shared named graph should go.
+    /// </summary>
+    Task UpdateAsync(string sparqlUpdate, CancellationToken ct);
 }

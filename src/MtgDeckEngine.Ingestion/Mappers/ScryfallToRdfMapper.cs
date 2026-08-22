@@ -27,7 +27,8 @@ public static class ScryfallToRdfMapper
             PriceEur: priceEur,
             PriceUsd: priceUsd,
             CommanderLegal: legal,
-            ImageUrl: c.ImageUris?.Normal ?? c.ImageUris?.Large ?? c.ImageUris?.Small);
+            ImageUrl: c.ImageUris?.Normal ?? c.ImageUris?.Large ?? c.ImageUris?.Small,
+            IsGameChanger: c.GameChanger);
     }
 
     public static void AssertCard(IGraph g, CardDto card)
@@ -55,6 +56,8 @@ public static class ScryfallToRdfMapper
             Assert(g, cardNode, "hasPriceEur", Decimal(g, eur));
         if (card.PriceUsd is decimal usd)
             Assert(g, cardNode, "hasPriceUsd", Decimal(g, usd));
+        if (card.IsGameChanger)
+            Assert(g, cardNode, "isGameChanger", Bool(g, true));
         if (!string.IsNullOrWhiteSpace(card.ImageUrl))
             Assert(g, cardNode, "hasImageUrl",
                 g.CreateLiteralNode(card.ImageUrl!, new Uri(XmlSpecsHelper.XmlSchemaDataTypeAnyUri)));

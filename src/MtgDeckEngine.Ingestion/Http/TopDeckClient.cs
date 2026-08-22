@@ -34,7 +34,7 @@ public sealed class TopDeckClient(HttpClient http, ILogger<TopDeckClient> logger
             logger.LogDebug("TopDeck POST /v2/tournaments (format={Format}, last={Last}d)",
                 filter.Format, filter.LastDays);
 
-            var resp = await http.PostAsync(
+            using var resp = await http.PostAsync(
                 new Uri("https://topdeck.gg/api/v2/tournaments"),
                 content, ct).ConfigureAwait(false);
 
@@ -55,10 +55,34 @@ public sealed class TopDeckClient(HttpClient http, ILogger<TopDeckClient> logger
                 resp.EnsureSuccessStatusCode();
             }
 
-            var list = await resp.Content
-                .ReadFromJsonAsync<List<TopDeckTournament>>(Json, ct)
-                .ConfigureAwait(false);
-            return list ?? new();
+            // TopDeck answers 200 with an EMPTY body when a query matches nothing
+            // (and, for wide queries, when it gives up after ~30s). Feeding that
+            // straight to ReadFromJsonAsync throws "input does not contain any
+            // JSON tokens", which surfaced as a stack trace on every startup for
+            // what is really just "no tournaments".
+            var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(body))
+            {
+                logger.LogInformation(
+                    "TopDeck: empty response for {Format} (last {Last}d, ≥{Min} players) — treating as no results.",
+                    filter.Format, filter.LastDays, filter.ParticipantMin);
+                return [];
+            }
+
+            try
+            {
+                return JsonSerializer.Deserialize<List<TopDeckTournament>>(body, Json) ?? [];
+            }
+            catch (JsonException ex)
+            {
+                // A 200 carrying non-JSON (an HTML error/maintenance page) is a
+                // problem with the upstream response, not with our data — log it
+                // and let ingestion carry on with the other formats.
+                logger.LogWarning(ex,
+                    "TopDeck: unparseable 200 response for {Format} ({Bytes} bytes); skipping this format.",
+                    filter.Format, body.Length);
+                return [];
+            }
         }
     }
 }

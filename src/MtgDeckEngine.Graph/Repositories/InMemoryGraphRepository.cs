@@ -3,6 +3,7 @@ using VDS.RDF;
 using VDS.RDF.Parsing;
 using VDS.RDF.Query;
 using VDS.RDF.Query.Datasets;
+using VDS.RDF.Update;
 using RdfGraph = VDS.RDF.Graph;
 
 namespace MtgDeckEngine.Graph.Repositories;
@@ -16,6 +17,7 @@ public sealed class InMemoryGraphRepository : IGraphRepository
     private readonly TripleStore _store = new();
     private readonly LeviathanQueryProcessor _processor;
     private readonly SparqlQueryParser _parser = new();
+    private readonly SparqlUpdateParser _updateParser = new();
     private readonly object _lock = new();
 
     public InMemoryGraphRepository()
@@ -49,6 +51,17 @@ public sealed class InMemoryGraphRepository : IGraphRepository
             var name = new UriNode(namedGraphUri);
             if (_store.HasGraph(name))
                 _store.Remove(name);
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task UpdateAsync(string sparqlUpdate, CancellationToken ct)
+    {
+        lock (_lock)
+        {
+            var cmds = _updateParser.ParseFromString(sparqlUpdate);
+            new LeviathanUpdateProcessor(new InMemoryDataset(_store, unionDefaultGraph: true))
+                .ProcessCommandSet(cmds);
         }
         return Task.CompletedTask;
     }
