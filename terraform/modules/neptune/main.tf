@@ -5,10 +5,22 @@ variable "name"                { type = string }
 variable "vpc_id"              { type = string }
 variable "subnet_ids"          { type = list(string) }
 variable "allowed_sg_ids"      { type = list(string) }
-variable "instance_class"      { type = string  default = "db.t4g.medium" }
-variable "instance_count"      { type = number  default = 1 }
-variable "engine_version"      { type = string  default = "1.3.2.0" }
-variable "tags"                { type = map(string)  default = {} }
+variable "instance_class" {
+  type    = string
+  default = "db.t4g.medium"
+}
+variable "instance_count" {
+  type    = number
+  default = 1
+}
+variable "engine_version" {
+  type    = string
+  default = "1.3.2.0"
+}
+variable "tags" {
+  type    = map(string)
+  default = {}
+}
 
 resource "aws_security_group" "neptune" {
   name        = "${var.name}-neptune"

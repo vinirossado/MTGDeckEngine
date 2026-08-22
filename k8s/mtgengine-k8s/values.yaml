@@ -1,3 +1,11 @@
 # Hardcoded no template por enquanto. Adicionar overrides aqui depois.
+
+image:
+  # Overridden by values-blue.yaml / values-green.yaml during a blue/green
+  # rollout. A default is still required: the deployment template dereferences
+  # .Values.image.tag unconditionally, so without one both `helm lint` and any
+  # `helm install` that omits -f fail on a nil pointer.
+  tag: latest
+
 namespace:
   active: mtgengine-k8s-green
