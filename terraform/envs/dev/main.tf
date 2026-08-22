@@ -12,8 +12,14 @@ terraform {
 
 provider "aws" { region = var.region }
 
-variable "region"  { type = string  default = "eu-north-1" }
-variable "name"    { type = string  default = "mtg-deck-engine-dev" }
+variable "region" {
+  type    = string
+  default = "eu-north-1"
+}
+variable "name" {
+  type    = string
+  default = "mtg-deck-engine-dev"
+}
 
 # Common tags applied to everything created here.
 locals {

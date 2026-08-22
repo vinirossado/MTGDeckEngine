@@ -45,15 +45,29 @@ jobs:
           version: v3.15.0
       - run: helm lint deploy/helm/mtg-deck-engine
 
+  # The kustomize bases/overlays this job used to build were replaced by the
+  # mtgengine-k8s Helm chart, so `k8s/overlays/{dev,prod}` no longer exist and
+  # the job had been failing on every run. There is no kustomization.yaml left
+  # anywhere in the repo, so there is nothing to re-point it at — this renders
+  # the chart instead, which is what actually needs validating now.
   k8s-validate:
-    name: kustomize build
+    name: k8s manifests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build dev overlay
-        run: kubectl kustomize k8s/overlays/dev > /dev/null
-      - name: Build prod overlay
-        run: kubectl kustomize k8s/overlays/prod > /dev/null
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.15.0
+      - run: helm lint k8s/mtgengine-k8s
+      # Render with each values file the chart ships: default plus both sides of
+      # the blue/green pair, since a template can be valid for one and broken
+      # for another.
+      - name: Render default values
+        run: helm template mtgengine k8s/mtgengine-k8s > /dev/null
+      - name: Render blue values
+        run: helm template mtgengine k8s/mtgengine-k8s -f k8s/mtgengine-k8s/values-blue.yaml > /dev/null
+      - name: Render green values
+        run: helm template mtgengine k8s/mtgengine-k8s -f k8s/mtgengine-k8s/values-green.yaml > /dev/null
 
   terraform-validate:
     name: terraform validate

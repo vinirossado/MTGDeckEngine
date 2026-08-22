@@ -9,8 +9,14 @@ terraform {
 }
 provider "aws" { region = var.region }
 
-variable "region" { type = string  default = "eu-north-1" }
-variable "name"   { type = string  default = "mtg-deck-engine-prod" }
+variable "region" {
+  type    = string
+  default = "eu-north-1"
+}
+variable "name" {
+  type    = string
+  default = "mtg-deck-engine-prod"
+}
 
 locals {
   tags = {
