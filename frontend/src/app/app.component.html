@@ -118,11 +118,84 @@
             Build deck
           </button>
         </div>
-        <p class="mt-2 text-[11px] text-muted leading-snug">
-          Builds a complete ~99-card deck within budget, ranked by a blended
-          win-rate proxy (tournament top-cut + EDHREC), manabase completed with
-          basic lands. Shows an estimated Commander Bracket.
+
+        <label class="text-[11px] text-muted block mt-3">Max bracket</label>
+        <select
+          [ngModel]="maxBracket()"
+          (ngModelChange)="setMaxBracket($event)"
+          class="w-full mt-1 bg-bg border border-border2 rounded px-3 py-2 text-sm
+                 focus:outline-none focus:border-accent">
+          <option *ngFor="let o of bracketOptions" [ngValue]="o.value">{{ o.label }}</option>
+        </select>
+        <p class="mt-1 text-[11px] text-muted leading-snug">
+          Caps the build: brackets 1–2 take no Game Changers, bracket 3 allows at
+          most three and no mass land denial. 4–5 are unrestricted.
         </p>
+
+        <label class="text-[11px] text-muted block mt-3">Save as (optional)</label>
+        <input
+          type="text" placeholder="My Xyris budget brew"
+          [ngModel]="deckName()"
+          (ngModelChange)="deckName.set($event)"
+          (keydown.enter)="buildAndSave()"
+          class="w-full mt-1 bg-bg border border-border2 rounded px-3 py-2 text-sm
+                 focus:outline-none focus:border-accent" />
+        <button
+          (click)="buildAndSave()"
+          [disabled]="loading() || !(budgetEur() > 0)"
+          class="w-full mt-2 bg-accent/20 border border-accent/40 text-accent rounded
+                 px-3 py-2 text-sm hover:bg-accent/30 disabled:opacity-50">
+          Build &amp; save
+        </button>
+
+        <p class="mt-2 text-[11px] text-muted leading-snug">
+          Builds a complete ~99-card deck within budget, ranked by the tournament
+          win rate of the decks that played each card (shrunk toward the pool
+          average so small samples don't dominate), with EDHREC inclusion filling
+          in where match records are thin. Manabase completed with basic lands.
+        </p>
+      </section>
+
+      <!-- Saved decks -->
+      <section class="bg-panel border border-border2 rounded-xl p-4">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-xs uppercase tracking-wider text-muted">
+            Saved decks ({{ savedDecks().length }})
+          </h2>
+          <button (click)="toggleSaved()"
+                  class="text-[11px] text-accent hover:underline">
+            {{ showSaved() ? 'Hide' : 'Show' }}
+          </button>
+        </div>
+        <div *ngIf="showSaved()">
+          <p *ngIf="savedDecks().length === 0" class="text-[11px] text-muted">
+            Nothing saved yet — build a deck and hit “Build &amp; save”.
+          </p>
+          <ul class="space-y-1.5">
+            <li *ngFor="let d of savedDecks()"
+                (click)="openSavedDeck(d.id)"
+                class="group cursor-pointer bg-bg border border-border2 rounded-lg
+                       px-3 py-2 hover:border-accent/50">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="text-sm truncate">{{ d.name }}</div>
+                  <div class="text-[11px] text-muted">
+                    {{ d.cardCount }} cards · €{{ d.totalPriceEur | number:'1.2-2' }}
+                    <span *ngIf="d.budgetEur"> / €{{ d.budgetEur | number:'1.0-0' }} budget</span>
+                    <span *ngIf="d.bracketLevel"> · Bracket {{ d.bracketLevel }}</span>
+                  </div>
+                  <div class="text-[10px] text-muted/70">{{ d.commanderSlug }}</div>
+                </div>
+                <button (click)="deleteSavedDeck(d.id, $event)"
+                        title="Delete this deck"
+                        class="opacity-0 group-hover:opacity-100 text-[11px]
+                               text-muted hover:text-accent shrink-0">
+                  ✕
+                </button>
+              </div>
+            </li>
+          </ul>
+        </div>
       </section>
 
       <!-- Preset queries -->
@@ -215,18 +288,60 @@
                [class.bg-warn]="b.level === 3"
                [class.bg-accent]="b.level >= 4"
                [class.text-bg]="b.level >= 4"
-               title="Estimated Commander Bracket">
+               [title]="b.isEstimate
+                          ? 'Local estimate — combos not detected'
+                          : 'Commander Spellbook — combo-aware'">
             Bracket {{ b.level }} · {{ b.label }}
+            <span *ngIf="b.isEstimate" class="opacity-70">(est.)</span>
           </div>
           <ul class="text-[11px] text-muted leading-snug list-disc pl-4 max-w-md">
             <li *ngFor="let r of b.reasons">{{ r }}</li>
           </ul>
         </div>
 
-        <p class="text-xs text-muted ml-auto max-w-xs">
-          Complete ~99-card deck within budget, ranked by a blended win-rate proxy;
-          manabase completed with basic lands.
-        </p>
+        <div class="ml-auto flex flex-col items-end gap-2">
+          <div class="flex items-center gap-2">
+            <button (click)="copyDecklist()"
+                    class="bg-accent2/20 border border-accent2/40 text-accent2 rounded
+                           px-3 py-1.5 text-xs hover:bg-accent2/30">
+              {{ copyLabel() }}
+            </button>
+            <button (click)="downloadDecklist()"
+                    class="bg-panel border border-border2 rounded px-3 py-1.5 text-xs
+                           hover:border-accent/50">
+              Download .txt
+            </button>
+            <button (click)="toggleDecklist()"
+                    class="bg-panel border border-border2 rounded px-3 py-1.5 text-xs
+                           hover:border-accent/50">
+              {{ showDecklist() ? 'Hide list' : 'Show list' }}
+            </button>
+          </div>
+          <p class="text-xs text-muted max-w-xs text-right">
+            Complete ~99-card deck within budget, ranked by real tournament win
+            rate where records exist. Bracket from Commander Spellbook
+            (combo-aware) when reachable, otherwise a local name-list estimate.
+          </p>
+        </div>
+      </div>
+
+      <!-- Plain-text decklist, ready to paste into Moxfield/Archidekt -->
+      <div *ngIf="deck() && showDecklist()"
+           class="bg-panel border border-border2 rounded-xl p-4">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-xs uppercase tracking-wider text-muted">
+            Decklist ({{ decklistLineCount() }} lines)
+          </h2>
+          <span class="text-[11px] text-muted">
+            Paste into Moxfield, Archidekt, MTGGoldfish or MTGO
+          </span>
+        </div>
+        <textarea
+          readonly
+          [value]="decklistText()"
+          class="w-full h-72 bg-bg border border-border2 rounded p-3 text-xs
+                 font-mono leading-relaxed resize-y focus:outline-none
+                 focus:border-accent"></textarea>
       </div>
 
       <!-- Card grid -->

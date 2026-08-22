@@ -35,6 +35,7 @@ builder.Services.AddSingleton<IGraphRepository>(sp =>
 builder.Services.AddSingleton<ShaclValidator>();
 builder.Services.AddSingleton<IDeckRecommendationService, DeckRecommendationService>();
 builder.Services.AddSingleton<IFormatService, FormatService>();
+builder.Services.AddSingleton<ISavedDeckService, SavedDeckService>();
 
 builder.Services.AddMtgIngestion(builder.Configuration);
 builder.Services.AddMtgAi(builder.Configuration);
@@ -49,7 +50,12 @@ if (app.Environment.IsDevelopment())
 if (app.Environment.IsDevelopment())
     app.UseCors(DevCorsPolicy);
 
-app.UseHttpsRedirection();
+// The dev "http" launch profile binds no HTTPS port, so the middleware logs
+// "Failed to determine the https port for redirect" on every start. In
+// containers TLS terminates at the ingress anyway, so redirection only makes
+// sense when this process actually serves HTTPS itself.
+if (!app.Environment.IsDevelopment())
+    app.UseHttpsRedirection();
 app.MapControllers();
 
 app.MapGet("/", () => Results.Ok(new

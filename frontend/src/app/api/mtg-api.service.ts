@@ -11,6 +11,9 @@ import type {
   FormatSummary,
   IngestSummary,
   RecommendationFilters,
+  SavedDeck,
+  SavedDeckSummary,
+  BuildAndSaveRequest,
 } from './api.types';
 
 @Injectable({ providedIn: 'root' })
@@ -65,13 +68,39 @@ export class MtgApiService {
     );
   }
 
-  buildDeck(slug: string, totalBudgetEur: number, maxCardPriceEur?: number): Observable<BudgetDeck> {
+  buildDeck(
+    slug: string,
+    totalBudgetEur: number,
+    maxCardPriceEur?: number,
+    maxBracket?: number | null,
+  ): Observable<BudgetDeck> {
     let p = new HttpParams().set('totalBudgetEur', totalBudgetEur);
     if (maxCardPriceEur != null) p = p.set('maxCardPriceEur', maxCardPriceEur);
+    if (maxBracket != null) p = p.set('maxBracket', maxBracket);
     return this.http.get<BudgetDeck>(
       `${this.base}/commanders/${encodeURIComponent(slug)}/build-deck`,
       { params: p },
     );
+  }
+
+  // ---- saved decks ----
+
+  listSavedDecks(commander?: string): Observable<SavedDeckSummary[]> {
+    let p = new HttpParams();
+    if (commander) p = p.set('commander', commander);
+    return this.http.get<SavedDeckSummary[]>(`${this.base}/decks`, { params: p });
+  }
+
+  getSavedDeck(id: string): Observable<SavedDeck> {
+    return this.http.get<SavedDeck>(`${this.base}/decks/${encodeURIComponent(id)}`);
+  }
+
+  buildAndSave(req: BuildAndSaveRequest): Observable<SavedDeck> {
+    return this.http.post<SavedDeck>(`${this.base}/decks/build-and-save`, req);
+  }
+
+  deleteSavedDeck(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.base}/decks/${encodeURIComponent(id)}`);
   }
 
   ingest(slug: string): Observable<IngestSummary> {

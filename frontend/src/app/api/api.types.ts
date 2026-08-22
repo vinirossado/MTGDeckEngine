@@ -12,6 +12,10 @@ export interface CardRecommendation {
   imageUrl: string | null;
   typeLine?: string | null;
   colorIdentity?: string | null;
+  tournamentWins?: number | null;
+  tournamentLosses?: number | null;
+  tournamentGames?: number | null;
+  winRate?: number | null;
 }
 
 export interface CommanderMeta {
@@ -43,6 +47,7 @@ export interface BudgetDeck {
   cardCount: number;
   cards: CardRecommendation[];
   bracket: DeckBracket | null;
+  commanderName?: string | null;
 }
 
 export interface CommanderSummary {
@@ -97,4 +102,40 @@ export interface RecommendationFilters {
   minTopCutAppearances?: number;
   source?: RecommendationSource;
   limit?: number;
+}
+
+export interface SavedDeckSummary {
+  id: string;
+  name: string;
+  commanderSlug: string;
+  totalPriceEur: number;
+  cardCount: number;
+  savedAt: string;
+  bracketLevel: number | null;
+  bracketLabel: string | null;
+  budgetEur: number | null;
+}
+
+export interface SavedDeck {
+  id: string;
+  name: string;
+  commanderSlug: string;
+  totalPriceEur: number;
+  cardCount: number;
+  savedAt: string;
+  cards: CardRecommendation[];
+  bracket: DeckBracket | null;
+  notes: string | null;
+  budgetEur: number | null;
+  commanderName: string | null;
+}
+
+export interface BuildAndSaveRequest {
+  commanderSlug: string;
+  totalBudgetEur: number;
+  maxBracket?: number | null;
+  maxCardPriceEur?: number | null;
+  minSynergy?: number | null;
+  name?: string | null;
+  notes?: string | null;
 }
