@@ -71,29 +71,22 @@ public sealed class TopDeckIngestor(
             return;
         }
 
-        // Batch writes — Fuseki's SPARQL Update endpoint 500s on multi-MB INSERT
-        // DATA bodies. ~25 tournaments per flush keeps each request under a few
-        // hundred KB; total throughput is comparable to one big request because
-        // the bottleneck is parsing on the server side.
-        const int batchSize = 25;
-        var g = new RdfGraph();
+        // Flush per tournament rather than accumulating the whole result set:
+        // a single large EDH event with full decklists is already tens of
+        // thousands of triples, so holding all of them costs memory for nothing.
+        // The repository splits each write across as many requests as the
+        // endpoint's body limit needs, so size is not this loop's problem.
         var entries = 0;
         var unresolved = 0;
-        var done = 0;
         foreach (var t in tournaments)
         {
             ct.ThrowIfCancellationRequested();
+            var g = new RdfGraph();
             entries += TopDeckToRdfMapper.AssertTournament(g, t, scryfall, out var miss);
             unresolved += miss;
-            done++;
-            if (done % batchSize == 0)
-            {
+            if (g.Triples.Count > 0)
                 await repo.WriteAsync(g, namedGraphUri: null, ct).ConfigureAwait(false);
-                g = new RdfGraph();
-            }
         }
-        if (g.Triples.Count > 0)
-            await repo.WriteAsync(g, namedGraphUri: null, ct).ConfigureAwait(false);
 
         logger.LogInformation(
             "TopDeck: wrote {Tournaments} {Format} tournaments, {Entries} entries; {Unresolved} card-name misses",

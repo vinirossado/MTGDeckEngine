@@ -10,4 +10,5 @@ public sealed record CardDto(
     decimal? PriceEur,
     decimal? PriceUsd,
     bool CommanderLegal,
-    string? ImageUrl = null);
+    string? ImageUrl = null,
+    bool IsGameChanger = false);
