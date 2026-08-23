@@ -264,8 +264,24 @@
 
       <!-- Tournament meta strip — commander (Phase 2) -->
       <div *ngIf="mode() === 'commander' && meta() as m"
-           class="bg-panel border border-border2 rounded-xl p-4
-                  grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+           class="bg-panel border border-border2 rounded-xl p-4 text-sm">
+        <!-- Where the numbers come from changes what they mean: the aggregate
+             covers all of EDHTop16, derived figures only the tournaments we
+             ingested. Saying so beats presenting them as equivalent. -->
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-[11px] uppercase tracking-wider text-muted">Tournament meta</span>
+          <span class="text-[10px] px-2 py-0.5 rounded border border-border2 text-muted"
+                [title]="m.source === 'EdhTop16Aggregate'
+                           ? 'EDHTop16 commander aggregates — covers their whole dataset'
+                           : m.source === 'DerivedFromEntries'
+                             ? 'Computed from the tournament decks in this graph — a floor, not the whole meta'
+                             : 'No tournament data for this commander'">
+            {{ m.source === 'EdhTop16Aggregate' ? 'EDHTop16'
+             : m.source === 'DerivedFromEntries' ? 'from ingested decks'
+             : 'no data' }}
+          </span>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div>
           <div class="text-[11px] uppercase text-muted">Entries</div>
           <div class="text-lg text-accent">{{ m.tournamentEntryCount }}</div>
@@ -285,6 +301,7 @@
           <div class="text-lg text-warn">
             {{ m.metaShare != null ? (m.metaShare | percent:'1.2-2') : '—' }}
           </div>
+        </div>
         </div>
       </div>
 
