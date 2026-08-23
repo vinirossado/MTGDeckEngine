@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using MtgDeckEngine.Core.Brackets;
 using MtgDeckEngine.Core.Models;
 using MtgDeckEngine.Ingestion.Dto;
 
@@ -79,7 +80,15 @@ public sealed class CommanderSpellbookClient(
 
     private static DeckBracket ToDeckBracket(SpellbookBracketResponse r)
     {
-        var (level, label) = MapTag(r.BracketTag!);
+        // Spellbook's bracketTag is their own severity ladder, not WotC's
+        // brackets. "Ruthless" fires on >3 Game Changers OR mass land denial OR
+        // a fast combo — all of which WotC puts at Bracket 4, not 5. Taking
+        // their tag as the bracket reported a 4-Game-Changer deck with no
+        // combos as cEDH.
+        //
+        // So use them for what they uniquely know — which cards are Game
+        // Changers, which pairs combo and how fast, what is banned — and apply
+        // WotC's published rules here.
 
         var gameChangers = r.Cards
             .Where(c => c.GameChanger && c.Card?.Name is not null)
@@ -108,11 +117,24 @@ public sealed class CommanderSpellbookClient(
             .Where(names => names.Count > 0)
             .ToList();
 
-        var reasons = new List<string> { $"Commander Spellbook bracket tag '{r.BracketTag}' → {label}." };
+        var earlyCombos = twoCardCombos.Count(c => c.Speed >= BracketRules.EarlyComboSpeed);
+        var lateCombos  = twoCardCombos.Count - earlyCombos;
+
+        var (level, label) = BracketRules.Evaluate(new BracketRules.Signals(
+            GameChangerCount:   gameChangers.Count,
+            HasMassLandDenial:  mld,
+            HasExtraTurns:      extraTurns,
+            EarlyTwoCardCombos: earlyCombos,
+            LateTwoCardCombos:  lateCombos,
+            HasBannedCards:     banned.Count > 0));
+
+        var reasons = new List<string>();
         if (banned.Count > 0)
             reasons.Add($"Banned in Commander: {string.Join(", ", banned)}.");
         if (gameChangers.Count > 0)
-            reasons.Add($"{gameChangers.Count} Game Changer(s): {string.Join(", ", gameChangers)}.");
+            reasons.Add(gameChangers.Count > 3
+                ? $"{gameChangers.Count} Game Changers (more than 3 requires Bracket 4): {string.Join(", ", gameChangers)}."
+                : $"{gameChangers.Count} Game Changer(s), within the 3 allowed at Bracket 3: {string.Join(", ", gameChangers)}.");
         if (twoCardCombos.Count > 0)
         {
             var samples = twoCardCombos
@@ -121,11 +143,16 @@ public sealed class CommanderSpellbookClient(
                     .Select(u => u.Card?.Name)
                     .Where(n => n is not null) ?? []))
                 .Where(s => s.Length > 0);
-            reasons.Add(
-                $"{twoCardCombos.Count} two-card infinite combo(s) detected: {string.Join("; ", samples)}.");
+            reasons.Add(earlyCombos > 0
+                ? $"{earlyCombos} early two-card infinite combo(s), which Bracket 3 does not allow: {string.Join("; ", samples)}."
+                : $"{lateCombos} late-game two-card combo(s), permitted at Bracket 3: {string.Join("; ", samples)}.");
         }
-        if (mld) reasons.Add("Contains mass land denial.");
+        if (mld) reasons.Add("Contains mass land denial, which requires Bracket 4.");
         if (extraTurns) reasons.Add("Contains extra-turn effects.");
+        if (reasons.Count == 0)
+            reasons.Add("No Game Changers, combos, mass land denial or extra turns found.");
+        if (level >= BracketRules.MaxDerivable)
+            reasons.Add(BracketRules.CeilingNote);
 
         return new DeckBracket(
             Level:             level,
@@ -140,24 +167,6 @@ public sealed class CommanderSpellbookClient(
             IsEstimate:        false,
             TwoCardCombos:     comboParticipants);
     }
-
-    /// <summary>
-    /// Spellbook grades on seven tags; WotC's published system has five brackets.
-    /// 'Oddball' sits between brackets 2 and 3 — we round it down to 2 so a deck
-    /// is never advertised as weaker-bracket-legal than it is. 'Banned' is not a
-    /// bracket at all; it maps to 0 to flag an illegal list.
-    /// </summary>
-    private static (int Level, string Label) MapTag(string tag) => tag.ToUpperInvariant() switch
-    {
-        "B" => (0, "Illegal — contains banned cards"),
-        "E" => (1, "Exhibition"),
-        "C" => (2, "Core"),
-        "O" => (2, "Oddball (between Core and Upgraded)"),
-        "P" => (3, "Upgraded"),
-        "S" => (4, "Optimized"),
-        "R" => (5, "cEDH"),
-        _   => (3, $"Unknown tag '{tag}'"),
-    };
 
     private static bool IsBasicLand(string name) => name is
         "Plains" or "Island" or "Swamp" or "Mountain" or "Forest" or "Wastes";
