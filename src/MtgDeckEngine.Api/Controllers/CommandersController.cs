@@ -8,8 +8,37 @@ namespace MtgDeckEngine.Api.Controllers;
 [Route("api/commanders")]
 public sealed class CommandersController(
     IDeckRecommendationService recs,
-    ICommanderNameResolver commanderNames) : ControllerBase
+    ICommanderNameResolver commanderNames,
+    ICommanderDiscoveryService discovery) : ControllerBase
 {
+    /// <summary>
+    /// The inverse of the deck builder: instead of "build a deck for this
+    /// commander", answers "which commanders are worth building at this bracket
+    /// and this budget?".
+    ///
+    /// Ranked by tournament win rate shrunk toward the average of the filtered
+    /// pool, so a commander with one lucky 3-0 does not outrank one with fifty
+    /// events. <paramref name="maxBudgetEur"/> matches against the cheapest
+    /// tournament deck actually recorded for that commander.
+    /// </summary>
+    [HttpGet("discover")]
+    public async Task<ActionResult<IReadOnlyList<CommanderPick>>> Discover(
+        [FromQuery] int? maxBracket,
+        [FromQuery] decimal? maxBudgetEur,
+        [FromQuery] int minDeckCount = 3,
+        [FromQuery] int limit = 25,
+        CancellationToken ct = default)
+    {
+        if (maxBracket is int b && b is < 1 or > 5)
+            return BadRequest("maxBracket must be between 1 and 5");
+        if (maxBudgetEur is <= 0)
+            return BadRequest("maxBudgetEur must be > 0");
+
+        var picks = await discovery.FindCommandersAsync(
+            new CommanderDiscoveryFilter(maxBracket, maxBudgetEur, minDeckCount, limit), ct);
+        return Ok(picks);
+    }
+
     /// <summary>
     /// Cards ranked by EDHREC inclusion + synergy for the given commander,
     /// filtered by price/category/type.

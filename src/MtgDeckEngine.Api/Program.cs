@@ -36,6 +36,7 @@ builder.Services.AddSingleton<ShaclValidator>();
 builder.Services.AddSingleton<IDeckRecommendationService, DeckRecommendationService>();
 builder.Services.AddSingleton<IFormatService, FormatService>();
 builder.Services.AddSingleton<ISavedDeckService, SavedDeckService>();
+builder.Services.AddSingleton<ICommanderDiscoveryService, CommanderDiscoveryService>();
 
 builder.Services.AddMtgIngestion(builder.Configuration);
 builder.Services.AddMtgAi(builder.Configuration);

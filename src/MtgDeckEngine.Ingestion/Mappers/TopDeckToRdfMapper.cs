@@ -101,14 +101,38 @@ public static class TopDeckToRdfMapper
             }
             else
             {
-                foreach (var (name, _) in ParseTextDecklist(s.Decklist!))
+                // Deck-level rollups are accumulated here and asserted once
+                // below. Deriving them at query time instead would mean summing
+                // ~100 card prices per deck across tens of thousands of decks on
+                // every request — the discovery query would be unusable.
+                var totalEur = 0m;
+                var pricedCards = 0;
+                var gameChangers = 0;
+
+                foreach (var (name, qty, isCommander) in ParseTextDecklist(s.Decklist!))
                 {
                     if (scryfall.TryGetByName(name, out var card) && card.OracleId is { Length: > 0 })
                     {
+                        if (card.BestPrice is decimal unit) { totalEur += unit * qty; pricedCards++; }
+                        if (card.GameChanger) gameChangers += qty;
+
                         var cardNode = g.CreateUriNode(new Uri(MtgVocab.CardUri(card.OracleId)));
                         g.Assert(deck,
                             g.CreateUriNode(new Uri(MtgVocab.Property("containsCard"))),
                             cardNode);
+
+                        // Link the deck to its commander. Partner/background
+                        // pairs put two cards in the command zone, so this is
+                        // asserted per card rather than assuming one.
+                        if (isCommander)
+                        {
+                            Assert(g, deck, "hasCommander",
+                                g.CreateUriNode(new Uri(MtgVocab.CommanderUri(MtgVocab.Slugify(card.Name)))));
+                            // And make that commander URI resolvable: without a
+                            // name and type on it, every commander-facing query
+                            // sees a bare URI it cannot label.
+                            AssertCommanderIdentity(g, card);
+                        }
 
                         // Also write the global card facts (oracleId / name / type /
                         // price / image URL). INSERT DATA is idempotent for identical
@@ -123,6 +147,14 @@ public static class TopDeckToRdfMapper
                         misses++;
                     }
                 }
+
+                if (pricedCards > 0)
+                    Assert(g, deck, "hasTotalPriceEur", DecimalNode(g, totalEur));
+                // Written even when zero: "no Game Changers" is a fact the
+                // bracket filter needs, and an absent triple is indistinguishable
+                // from a deck we simply could not price.
+                Assert(g, deck, "hasGameChangerCount", Int(g, gameChangers));
+                Assert(g, deck, "hasPricedCardCount", Int(g, pricedCards));
             }
         }
         return (1, misses);
@@ -133,13 +165,25 @@ public static class TopDeckToRdfMapper
     ///   "1 Sol Ring"
     ///   "1x Sol Ring"
     ///   "Sol Ring"
-    /// Lines that are empty / comments / sideboard headers / TopDeck-style
-    /// section markers (~~Commanders~~ / ~~Mainboard~~) are skipped.
-    /// Also handles TopDeck.gg's literal "\n" backslash-n escape — their
-    /// payload comes in as a single string with embedded escapes rather than
-    /// real newlines.
+    ///
+    /// TopDeck.gg wraps EDH lists in markdown section headers, and the command
+    /// zone is the only place the commander is identified:
+    ///
+    ///   ~~Commanders~~
+    ///   1 Kinnan, Bonder Prodigy
+    ///
+    ///   ~~Mainboard~~
+    ///   1 Arcane Signet
+    ///
+    /// Cards in that section come back with <c>IsCommander</c> set. Skipping
+    /// the header and treating the commander as an ordinary card — the previous
+    /// behaviour — threw away the single most useful fact about an EDH deck.
+    ///
+    /// Empty lines, comments and sideboard headers are skipped. Also handles
+    /// TopDeck.gg's literal "\n" backslash-n escape: their payload arrives as
+    /// one string with embedded escapes rather than real newlines.
     /// </summary>
-    public static IEnumerable<(string Name, int Qty)> ParseTextDecklist(string text)
+    public static IEnumerable<(string Name, int Qty, bool IsCommander)> ParseTextDecklist(string text)
     {
         // Real newlines OR literal "\n" (TopDeck.gg payload form).
         var normalised = text
@@ -147,16 +191,21 @@ public static class TopDeckToRdfMapper
             .Replace("\\n", "\n", StringComparison.Ordinal)
             .Replace("\\'", "'", StringComparison.Ordinal);
 
+        var inCommandZone = false;
+
         foreach (var raw in normalised.Split('\n'))
         {
             var line = raw.Trim();
             if (line.Length == 0) continue;
             if (line.StartsWith("//") || line.StartsWith('#')) continue;
-            if (line.StartsWith("~~")) continue;                                       // markdown section headers
             if (line.StartsWith("Sideboard", StringComparison.OrdinalIgnoreCase)) yield break;
-            if (line.StartsWith("Commander", StringComparison.OrdinalIgnoreCase)) continue;
-            if (line.StartsWith("Mainboard", StringComparison.OrdinalIgnoreCase)) continue;
-            if (line.StartsWith("Deck", StringComparison.OrdinalIgnoreCase)) continue;
+
+            // Section headers, with or without the markdown "~~" fence. Matched
+            // on the bare word so a card line ("1 Commander's Sphere") is never
+            // mistaken for a header — those start with a quantity.
+            if (IsHeader(line, "Commander", "Commanders")) { inCommandZone = true;  continue; }
+            if (IsHeader(line, "Mainboard", "Deck", "Maindeck")) { inCommandZone = false; continue; }
+            if (line.StartsWith("~~")) continue;   // any other markdown section
 
             // Strip optional set/collector suffix: "Sol Ring (CMR) 472"
             var parenIdx = line.IndexOf('(');
@@ -166,16 +215,46 @@ public static class TopDeckToRdfMapper
             var firstSpace = line.IndexOf(' ');
             if (firstSpace < 1)
             {
-                yield return (line, 1);
+                yield return (line, 1, inCommandZone);
                 continue;
             }
             var qtyPart = line[..firstSpace].TrimEnd('x', 'X');
             var namePart = line[(firstSpace + 1)..].Trim();
             if (int.TryParse(qtyPart, NumberStyles.Integer, CultureInfo.InvariantCulture, out var qty))
-                yield return (namePart, qty);
+                yield return (namePart, qty, inCommandZone);
             else
-                yield return (line, 1);
+                yield return (line, 1, inCommandZone);
         }
+    }
+
+    /// <summary>
+    /// Assert the commander URI as a first-class node: typed, named, and tied
+    /// back to the card it came from. EDHREC-ingested commanders get this via
+    /// the commander context; TopDeck-only ones would otherwise be nameless.
+    /// </summary>
+    private static void AssertCommanderIdentity(IGraph g, Dto.ScryfallCard card)
+    {
+        var commander = g.CreateUriNode(new Uri(MtgVocab.CommanderUri(MtgVocab.Slugify(card.Name))));
+        AssertType(g, commander, "Commander");
+        Assert(g, commander, "hasName", g.CreateLiteralNode(card.Name));
+        if (card.OracleId is { Length: > 0 })
+        {
+            Assert(g, commander, "hasOracleId", g.CreateLiteralNode(card.OracleId));
+            Assert(g, commander, "isCardOf",
+                g.CreateUriNode(new Uri(MtgVocab.CardUri(card.OracleId))));
+        }
+    }
+
+    /// <summary>
+    /// True when the line is a bare section header, optionally fenced in "~~".
+    /// Card lines carry a quantity prefix, so they never match.
+    /// </summary>
+    private static bool IsHeader(string line, params string[] names)
+    {
+        var bare = line.Trim('~', ' ', ':');
+        foreach (var n in names)
+            if (bare.Equals(n, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
     }
 
     public static string NormalizeFormat(string? raw) =>
@@ -192,6 +271,10 @@ public static class TopDeckToRdfMapper
         => g.Assert(subj,
             g.CreateUriNode(new Uri(MtgVocab.Property(localProp))),
             obj);
+
+    private static ILiteralNode DecimalNode(IGraph g, decimal d) =>
+        g.CreateLiteralNode(MtgDeckEngine.Core.RdfLiterals.Decimal(d),
+            new Uri(XmlSpecsHelper.XmlSchemaDataTypeDecimal));
 
     private static ILiteralNode Int(IGraph g, int i) =>
         g.CreateLiteralNode(i.ToString(CultureInfo.InvariantCulture),

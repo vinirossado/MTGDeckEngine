@@ -80,6 +80,86 @@ public class TopDeckMapperTests
         var fmt = g.GetTriplesWithSubjectPredicate(deck, hasFormat).Single();
         Assert.Equal("EDH", ((ILiteralNode)fmt.Object).Value);
     }
+
+    [Fact]
+    public void Separates_the_command_zone_from_the_mainboard()
+    {
+        // TopDeck.gg's real EDH shape. The commander used to be parsed as an
+        // ordinary mainboard card, which threw away the deck's identity.
+        var text = """
+            ~~Commanders~~
+            1 Kinnan, Bonder Prodigy
+
+            ~~Mainboard~~
+            1 Arcane Signet
+            1 Basalt Monolith
+            """;
+
+        var parsed = TopDeckToRdfMapper.ParseTextDecklist(text).ToList();
+
+        var commanders = parsed.Where(p => p.IsCommander).Select(p => p.Name).ToList();
+        Assert.Equal(["Kinnan, Bonder Prodigy"], commanders);
+        Assert.All(parsed.Where(p => !p.IsCommander),
+            p => Assert.Contains(p.Name, new[] { "Arcane Signet", "Basalt Monolith" }));
+    }
+
+    [Fact]
+    public void Handles_partner_pairs_in_the_command_zone()
+    {
+        var text = """
+            ~~Commanders~~
+            1 Rograkh, Son of Rohgahh
+            1 Silas Renn, Seeker Adept
+
+            ~~Mainboard~~
+            1 Sol Ring
+            """;
+
+        var commanders = TopDeckToRdfMapper.ParseTextDecklist(text)
+            .Where(p => p.IsCommander).Select(p => p.Name).ToList();
+
+        Assert.Equal(["Rograkh, Son of Rohgahh", "Silas Renn, Seeker Adept"], commanders);
+    }
+
+    [Fact]
+    public void A_card_named_like_a_section_header_is_still_a_card()
+    {
+        // "Commander's Sphere" and "Deck"-prefixed names must not be eaten by
+        // the header check. Card lines carry a quantity; headers do not.
+        var text = """
+            ~~Mainboard~~
+            1 Commander's Sphere
+            1 Deckbuilder's Delight
+            """;
+
+        var parsed = TopDeckToRdfMapper.ParseTextDecklist(text).ToList();
+
+        Assert.Contains(parsed, p => p.Name == "Commander's Sphere" && !p.IsCommander);
+        Assert.Contains(parsed, p => p.Name == "Deckbuilder's Delight" && !p.IsCommander);
+    }
+
+    [Fact]
+    public void Handles_unfenced_section_headers()
+    {
+        var text = """
+            Commander
+            1 Kinnan, Bonder Prodigy
+            Deck
+            1 Sol Ring
+            """;
+
+        var parsed = TopDeckToRdfMapper.ParseTextDecklist(text).ToList();
+
+        Assert.Contains(parsed, p => p.Name == "Kinnan, Bonder Prodigy" && p.IsCommander);
+        Assert.Contains(parsed, p => p.Name == "Sol Ring" && !p.IsCommander);
+    }
+
+    [Fact]
+    public void A_list_with_no_command_zone_marks_nothing_as_commander()
+    {
+        var parsed = TopDeckToRdfMapper.ParseTextDecklist("1 Sol Ring\n1 Cultivate").ToList();
+        Assert.All(parsed, p => Assert.False(p.IsCommander));
+    }
 }
 
 // Minimal stub so we can newup ScryfallBulkCache without DI for parsing-only tests.

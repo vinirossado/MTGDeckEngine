@@ -7,6 +7,7 @@ import type {
   BudgetDeck,
   CardRecommendation,
   CommanderMeta,
+  CommanderPick,
   CommanderSummary,
   FormatMeta,
   FormatSummary,
@@ -22,7 +23,7 @@ interface Preset {
   run: () => void;
 }
 
-type Mode = 'commander' | 'format';
+type Mode = 'commander' | 'format' | 'discover';
 
 @Component({
   selector: 'app-root',
@@ -134,6 +135,12 @@ export class AppComponent {
     URL.revokeObjectURL(url);
   }
 
+  // ---- discover: which commander should I build? ----
+  readonly picks           = signal<CommanderPick[]>([]);
+  readonly discoverBracket = signal<number | null>(3);
+  readonly discoverBudget  = signal<number | null>(200);
+  readonly minDeckCount    = signal<number>(3);
+
   readonly bracketOptions = [
     { value: null, label: 'Any bracket' },
     { value: 1, label: '1 — Exhibition' },
@@ -143,11 +150,13 @@ export class AppComponent {
     { value: 5, label: '5 — cEDH' },
   ];
 
-  readonly title = computed(() =>
-    this.mode() === 'commander'
-      ? `MTG Deck Engine — ${this.slug() || '—'}`
-      : `MTG Deck Engine — ${this.format() || '—'} format`,
-  );
+  readonly title = computed(() => {
+    switch (this.mode()) {
+      case 'commander': return `MTG Deck Engine — ${this.slug() || '—'}`;
+      case 'format':    return `MTG Deck Engine — ${this.format() || '—'} format`;
+      default:          return 'MTG Deck Engine — find a commander';
+    }
+  });
 
   // Preset queries shown as buttons. Each one calls a Phase 1+ endpoint
   // we built on the API side; the result populates `cards` or `deck`.
@@ -218,6 +227,45 @@ export class AppComponent {
     this.refreshFormatList();
     this.fetchMeta();
     this.refreshSavedDecks();
+  }
+
+  setDiscoverBracket(raw: string): void {
+    this.discoverBracket.set(raw === '' || raw === 'null' ? null : Number(raw));
+  }
+
+  runDiscover(): void {
+    this.loading.set(true);
+    this.status.set('Searching…');
+    this.api.discoverCommanders({
+      maxBracket:   this.discoverBracket(),
+      maxBudgetEur: this.discoverBudget(),
+      minDeckCount: this.minDeckCount(),
+      limit:        30,
+    }).pipe(
+      tap(rows => {
+        this.picks.set(rows);
+        this.status.set(rows.length
+          ? `${rows.length} commanders`
+          : 'No commander matches that bracket and budget.');
+      }),
+      catchError(err => {
+        this.status.set(`Error: ${err?.error ?? err?.message ?? err}`);
+        this.picks.set([]);
+        return of([] as CommanderPick[]);
+      }),
+    ).subscribe(() => this.loading.set(false));
+  }
+
+  /** Jump from a discovered commander straight into building a deck for it. */
+  buildFromPick(pick: CommanderPick): void {
+    // Partner pairs are keyed "a+b"; the builder works off a single slug, so
+    // take the first half rather than sending it a key it cannot resolve.
+    this.slug.set(pick.commanderSlug.split('+')[0]);
+    this.mode.set('commander');
+    this.picks.set([]);
+    this.fetchMeta();
+    if (pick.minDeckPriceEur) this.budgetEur.set(Math.ceil(pick.minDeckPriceEur));
+    this.maxBracket.set(pick.estimatedBracket);
   }
 
   setMaxBracket(raw: string): void {
@@ -327,8 +375,10 @@ export class AppComponent {
     this.meta.set(null);
     this.formatMeta.set(null);
     this.status.set('');
+    this.picks.set([]);
     if (m === 'commander') this.fetchMeta();
-    else this.fetchFormatMeta();
+    else if (m === 'format') this.fetchFormatMeta();
+    else this.runDiscover();
   }
 
   refreshFormatList(): void {
