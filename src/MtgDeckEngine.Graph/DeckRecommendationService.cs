@@ -318,29 +318,31 @@ WHERE {{
             if (bracket.Level <= cap) break;
             if (bracket.TwoCardCombos is not { Count: > 0 }) break;   // over cap for some other reason
 
-            var removedAny = false;
-            foreach (var combo in bracket.TwoCardCombos)
-            {
-                // Breaking one half is enough. Drop the lowest-scoring
-                // participant that is actually removable — the commander itself
-                // is not in the 99, and a card we already replaced is gone.
-                var victim = combo
-                    .Select(name => chosen.FirstOrDefault(c =>
-                        string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase)))
-                    .Where(c => c is not null)
-                    .OrderBy(c => ScoreOf(score, c!))
-                    .FirstOrDefault();
-                if (victim is null) continue;      // e.g. combo runs through the commander
+            // One cut can break several combos at once when they share a card,
+            // so choose the smallest set that hits them all rather than cutting
+            // each combo's weakest half independently. Every avoided cut is a
+            // card the budget paid for and the scorer wanted.
+            var inDeckByName = chosen
+                .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
+            var toCut = ComboBreaker.ChooseCardsToCut(
+                bracket.TwoCardCombos,
+                isRemovable: name => inDeckByName.ContainsKey(name),
+                scoreOf:     name => inDeckByName.TryGetValue(name, out var c)
+                                 ? ScoreOf(score, c) : double.MaxValue);
+
+            // Nothing we could remove — every combo runs through the commander,
+            // which is not one of the 99. Report the real bracket rather than looping.
+            if (toCut.Count == 0) break;
+
+            foreach (var name in toCut)
+            {
+                if (!inDeckByName.TryGetValue(name, out var victim)) continue;
                 banned.Add(victim.Name);
                 chosen.Remove(victim);
                 inDeck.Remove(victim.OracleId);
-                removedAny = true;
             }
-
-            // Nothing we could remove — every combo runs through the commander,
-            // which cannot be cut. Report the real bracket rather than looping.
-            if (!removedAny) break;
 
             RefillAndUpgrade(chosen, inDeck, lands, nonlands, score, budget, constraint, banned);
 

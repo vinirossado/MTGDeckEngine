@@ -536,8 +536,19 @@ which is exactly what happened to Kefka (whose commander combos with Psychosis
 Crawler).
 
 So the cap is enforced afterwards instead: evaluate, and if the bracket
-overshoots, break each reported combo by cutting its lowest-scoring participant,
-refill to 99 and re-evaluate. Up to 3 rounds, converging in 1 in practice.
+overshoots, cut cards until every reported combo is broken, refill to 99 and
+re-evaluate. Up to 3 rounds, converging in 1 in practice.
+
+Which cards to cut is a **minimum hitting set** over the combos
+(`ComboBreaker`), not one cut per combo. Combos share pieces — Kefka's three
+run `Dualcaster Mage + Blur` and `Dualcaster Mage + Ghostly Flicker`, so one
+cut covers both. Cutting per combo removes 3 cards there; the minimum cover
+removes 2. Every avoided cut is a card the budget paid for and the scorer
+wanted. Ties between equally small covers go to the one losing least score.
+
+The search is exhaustive by size, which is exact and trivially fast at this
+scale (a handful of participants). Past 22 distinct participants it falls back
+to greedy set cover so a pathological list cannot hang a request.
 
 Two details that make it terminate:
 - Cut cards go on a ban list. Without it the upgrade pass immediately re-picks
