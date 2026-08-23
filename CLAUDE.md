@@ -545,6 +545,30 @@ a different subject. Every commander-facing query keys on the slug node, so a
 commander ingested by name was invisible in the commander list until that node
 existed.
 
+### The bracket is derived here, not taken from Spellbook
+
+Commander Spellbook returns a `bracketTag` on its own severity ladder —
+`Ruthless`, `Spicy`, `Powerful`… — which is **not** WotC's bracket scale.
+`Ruthless` fires on more than 3 Game Changers OR mass land denial OR a fast
+combo, and WotC puts all three at Bracket 4. Passing their tag through reported
+a 4-Game-Changer Xyris deck with no combos at all as cEDH.
+
+So Spellbook is used for what it uniquely knows — which cards are Game
+Changers, which pairs combo and how fast, what is banned — and `BracketRules`
+applies WotC's published rules to those signals.
+
+**A decklist can only establish brackets 2 to 4.**
+
+- **5 is not derivable.** Brackets 4 and 5 have *identical* card-list rules;
+  the difference is a competitive, metagame-aware mindset. Reporting 5 from a
+  list claims to read intent. Decks that reach 4 carry a note saying so.
+- **1 is not derivable either.** Exhibition and Core differ by theme, not by
+  any rule a list breaks, so 2 is the floor.
+- **0 means illegal**, not a bracket — the list contains banned cards.
+
+Bracket 3 permits combos that only assemble late, so combo speed matters:
+Spellbook's `speed >= 4` counts as early and forces 4.
+
 ### `maxBracket` is enforced in two passes
 
 Card-level triggers — Game Changers, mass land denial, extra turns — are
