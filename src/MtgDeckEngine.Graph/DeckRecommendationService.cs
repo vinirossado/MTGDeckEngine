@@ -253,7 +253,7 @@ WHERE {{
         }
 
         // Manabase: fill the land quota entirely with basics (free) for now.
-        var basics = BuildBasics(identity, quotas.Lands);
+        var basics = await BuildBasicsAsync(identity, quotas.Lands, ct).ConfigureAwait(false);
         chosen.AddRange(basics);
 
         // ---- Phase B — upgrade within budget ----
@@ -574,25 +574,83 @@ WHERE {{
 
     // Synthesise the basic-land manabase in the deck's colour identity. Colourless
     // commanders get Wastes. Copies are distributed as evenly as possible.
-    private static List<CardRecommendation> BuildBasics(HashSet<char> identity, int count)
+    /// <summary>
+    /// Synthesise the basic-land manabase in the deck's colour identity,
+    /// distributing copies as evenly as the identity allows. Colourless
+    /// commanders get Wastes.
+    ///
+    /// The cards are looked up in the graph rather than invented. Basics are
+    /// real cards with real oracle ids and real art, and a made-up id
+    /// ("basic-island-0") left every basic in a built deck as a blank tile: no
+    /// image on the card, and nothing for a client to fall back to either,
+    /// since resolving art by oracle id needs a real one.
+    /// </summary>
+    private async Task<List<CardRecommendation>> BuildBasicsAsync(
+        HashSet<char> identity, int count, CancellationToken ct)
     {
-        var list = new List<CardRecommendation>(count);
         var order = new[] { 'W', 'U', 'B', 'R', 'G' }.Where(identity.Contains).ToList();
-        if (order.Count == 0) order.Add('C'); // colourless → Wastes
+        if (order.Count == 0) order.Add('C');                   // colourless → Wastes
+
+        var wanted = order.Select(BasicLandName).Distinct(StringComparer.Ordinal).ToList();
+        var known = await LookupBasicsAsync(wanted, ct).ConfigureAwait(false);
+
+        var list = new List<CardRecommendation>(count);
         for (var i = 0; i < count; i++)
         {
-            var code = order[i % order.Count];
-            var name = BasicLandName(code);
-            list.Add(new CardRecommendation(
-                OracleId:      $"basic-{name.ToLowerInvariant()}-{i}",
-                Name:          name,
-                Category:      "Lands",
-                InclusionPct:  null,
-                SynergyScore:  null,
-                PriceEur:      0m,
-                TypeLine:      $"Basic Land — {name}"));
+            var name = BasicLandName(order[i % order.Count]);
+            // Fall back to a placeholder only if the card is genuinely missing
+            // from the graph — better a blank tile than a short manabase.
+            list.Add(known.TryGetValue(name, out var card)
+                ? card
+                : new CardRecommendation(
+                    OracleId: $"basic-{name.ToLowerInvariant()}",
+                    Name:     name,
+                    Category: "Lands",
+                    InclusionPct: null,
+                    SynergyScore: null,
+                    PriceEur: 0m,
+                    TypeLine: $"Basic Land — {name}"));
         }
         return list;
+    }
+
+    /// <summary>
+    /// Oracle id and art for each named basic land. Priced at zero regardless of
+    /// what the graph says: basics come free with the deck, and charging the
+    /// budget for 37 of them would distort every build.
+    /// </summary>
+    private async Task<Dictionary<string, CardRecommendation>> LookupBasicsAsync(
+        IReadOnlyList<string> names, CancellationToken ct)
+    {
+        var values = string.Join(" ", names.Select(n => $"\"{n}\""));
+        var sparql = $@"
+PREFIX mtg: <{MtgVocab.Namespace}>
+
+SELECT ?name ?oracleId ?typeLine (SAMPLE(?img) AS ?imageUrl) WHERE {{
+  ?card mtg:hasName ?name ; mtg:hasOracleId ?oracleId ; mtg:hasTypeLine ?typeLine .
+  OPTIONAL {{ ?card mtg:hasImageUrl ?img }}
+  VALUES ?name {{ {values} }}
+  FILTER (STRSTARTS(?typeLine, ""Basic Land""))
+}}
+GROUP BY ?name ?oracleId ?typeLine";
+
+        var rs = await repo.QueryAsync(sparql, ct).ConfigureAwait(false);
+        var map = new Dictionary<string, CardRecommendation>(StringComparer.Ordinal);
+        foreach (var row in rs)
+        {
+            var name = Str(row, "name");
+            if (name is null || map.ContainsKey(name)) continue;
+            map[name] = new CardRecommendation(
+                OracleId:     Str(row, "oracleId") ?? $"basic-{name.ToLowerInvariant()}",
+                Name:         name,
+                Category:     "Lands",
+                InclusionPct: null,
+                SynergyScore: null,
+                PriceEur:     0m,
+                ImageUrl:     Str(row, "imageUrl"),
+                TypeLine:     Str(row, "typeLine") ?? $"Basic Land — {name}");
+        }
+        return map;
     }
 
     private static string BasicLandName(char code) => code switch
