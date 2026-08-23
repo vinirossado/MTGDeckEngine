@@ -498,6 +498,31 @@ g.Assert(card, g.CreateUriNode("mtg:hasPriceEur"),
                g.CreateLiteralNode(price.ToString(), new Uri(XmlSpecsHelper.XmlSchemaDataTypeDecimal)));
 ```
 
+### Canonical xsd:decimal is mandatory (cost us a silent data-corruption bug)
+
+Always build decimal literals with `RdfLiterals.Decimal(value)`, never
+`value.ToString()`.
+
+Jena accepts a non-canonical `xsd:decimal` on INSERT and hands back the
+canonical form on SELECT — but the triple then becomes **permanently
+undeletable**. `DELETE ... WHERE`, `DELETE WHERE`, and even `DELETE DATA` with
+the exact original lexical form all report success and remove nothing.
+
+Canonical form needs a decimal point with at least one digit after it and no
+trailing zeros beyond that. C# produces non-canonical output routinely:
+
+| C# value | `ToString()` | Canonical | Deletable |
+|---|---|---|---|
+| `60m` (JSON round-trip) | `"60"` | `"60.0"` | no |
+| `1.50m` (price feed) | `"1.50"` | `"1.5"` | no |
+| `0m` | `"0"` | `"0.0"` | no |
+| `0.45m` | `"0.45"` | `"0.45"` | yes |
+
+Because delete-before-insert silently no-ops on these, every re-ingest added a
+second price triple: 8,601 of 15,561 priced cards had accumulated duplicates,
+and `MIN(?price)` was quoting whichever was lowest. There is no repair query —
+affected data has to be dropped and re-ingested.
+
 ### Fuseki request-size limit (bit us once)
 
 Fuseki posts SPARQL Update as an HTTP form, and Jetty rejects bodies over

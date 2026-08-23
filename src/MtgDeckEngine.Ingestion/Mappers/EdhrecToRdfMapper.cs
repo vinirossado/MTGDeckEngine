@@ -81,7 +81,7 @@ public static class EdhrecToRdfMapper
     }
 
     private static ILiteralNode Decimal(IGraph g, decimal d) =>
-        g.CreateLiteralNode(d.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        g.CreateLiteralNode(MtgDeckEngine.Core.RdfLiterals.Decimal(d),
             new Uri(XmlSpecsHelper.XmlSchemaDataTypeDecimal));
 
     private static ILiteralNode Int(IGraph g, int i) =>
