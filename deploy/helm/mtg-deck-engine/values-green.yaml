@@ -1,0 +1,24 @@
+# Green side of a blue/green rollout.
+#
+#   helm upgrade --install mtg deploy/helm/mtg-deck-engine \
+#     -n mtg-deck-engine-green --create-namespace \
+#     -f deploy/helm/mtg-deck-engine/values-green.yaml
+#
+# Use the SAME release name for both colours (only the namespace differs), so
+# the VirtualService can reach either one by name. If they must differ, set
+# istio.activeService to the target colour's Service name.
+#
+# Deploying a colour does not move traffic. Traffic follows
+# istio.activeNamespace on whichever release owns the VirtualService.
+
+image:
+  tag: green
+
+istio:
+  enabled: true
+  activeNamespace: mtg-deck-engine-green
+
+# Istio's Gateway replaces the ALB Ingress; running both would give the same
+# Service two independent entry points.
+ingress:
+  enabled: false
