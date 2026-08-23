@@ -48,7 +48,29 @@ secrets:
   topdeckApiKey:    ""
   anthropicApiKey:  ""
 
+# ALB Ingress. Disable when routing through the Istio mesh instead — the two
+# are alternative entry points to the same Service, not layers.
 ingress:
   enabled: true
   host: "api.mtg.example.com"
   certificateArn: ""
+
+service:
+  port: 80
+
+# Istio mesh routing + blue/green. Off by default so the chart keeps rendering
+# the plain ALB path for anyone not running a mesh; the values-blue.yaml /
+# values-green.yaml files turn it on.
+istio:
+  enabled: false
+  hosts: ["*"]
+  gateway:
+    selector:
+      istio: ingressgateway
+    port: 80
+  # Namespace the VirtualService routes to. Empty means the release namespace;
+  # set it to the other colour's namespace to flip live traffic.
+  activeNamespace: ""
+  # Service name to route to. Empty means this release's own name, which is
+  # what you want when both colours are installed under the same release name.
+  activeService: ""

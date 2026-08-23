@@ -1,0 +1,29 @@
+{{- if .Values.istio.enabled -}}
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: {{ include "mtg.fullname" . }}
+  labels: {{- include "mtg.labels" . | nindent 4 }}
+spec:
+  hosts: {{- toYaml .Values.istio.hosts | nindent 4 }}
+  gateways:
+    - {{ include "mtg.fullname" . }}
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            # The blue/green switch. Each colour is its own release in its own
+            # namespace; flipping activeNamespace moves live traffic without
+            # redeploying either side.
+            #
+            # activeService defaults to this release's own name, which is only
+            # correct when both colours share it. Deploy them under the same
+            # release name in different namespaces, or set activeService
+            # explicitly — otherwise flipping points at a Service that does not
+            # exist in the target namespace.
+            host: {{ .Values.istio.activeService | default (include "mtg.fullname" .) }}.{{ .Values.istio.activeNamespace | default .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.service.port }}
+{{- end }}

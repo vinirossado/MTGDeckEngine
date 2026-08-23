@@ -8,5 +8,5 @@ spec:
   selector: {{- include "mtg.selectorLabels" . | nindent 4 }}
   ports:
     - name: http
-      port: 80
+      port: {{ .Values.service.port }}
       targetPort: http
