@@ -22,11 +22,12 @@ public sealed class CommandersController(
     /// tournament deck actually recorded for that commander.
     /// </summary>
     [HttpGet("discover")]
-    public async Task<ActionResult<IReadOnlyList<CommanderPick>>> Discover(
+    public async Task<IActionResult> Discover(
         [FromQuery] int? maxBracket,
         [FromQuery] decimal? maxBudgetEur,
         [FromQuery] int minDeckCount = 3,
         [FromQuery] int limit = 25,
+        [FromQuery] bool explain = false,
         CancellationToken ct = default)
     {
         if (maxBracket is int b && b is < 1 or > 5)
@@ -34,8 +35,10 @@ public sealed class CommandersController(
         if (maxBudgetEur is <= 0)
             return BadRequest("maxBudgetEur must be > 0");
 
-        var picks = await discovery.FindCommandersAsync(
-            new CommanderDiscoveryFilter(maxBracket, maxBudgetEur, minDeckCount, limit), ct);
+        var filter = new CommanderDiscoveryFilter(maxBracket, maxBudgetEur, minDeckCount, limit);
+        if (explain) return Sparql(discovery.Explain(filter));
+
+        var picks = await discovery.FindCommandersAsync(filter, ct);
         return Ok(picks);
     }
 
@@ -48,7 +51,7 @@ public sealed class CommandersController(
     /// category labels (e.g. "Lands,Mana Artifacts").
     /// </remarks>
     [HttpGet("{slug}/recommendations")]
-    public async Task<ActionResult<IReadOnlyList<CardRecommendation>>> Recommendations(
+    public async Task<IActionResult> Recommendations(
         string slug,
         [FromQuery] decimal? maxPriceEur,
         [FromQuery] decimal? minInclusion,
@@ -61,6 +64,7 @@ public sealed class CommandersController(
         [FromQuery] int? minTopCutAppearances = null,
         [FromQuery] int? maxPlacement = null,
         [FromQuery] RecommendationSource source = RecommendationSource.All,
+        [FromQuery] bool explain = false,
         CancellationToken ct = default)
     {
         var filter = new RecommendationFilter(
@@ -75,6 +79,9 @@ public sealed class CommandersController(
             MinTopCutAppearances:   minTopCutAppearances,
             MaxPlacement:           maxPlacement,
             Source:                 source);
+        if (explain)
+            return Sparql(recs.ExplainRecommendations(slug, filter));
+
         var items = await recs.GetRecommendationsAsync(slug, filter, ct);
         return Ok(items);
     }
@@ -84,9 +91,12 @@ public sealed class CommandersController(
     /// rate, meta share). Sourced from EDHTop16 ingestion.
     /// </summary>
     [HttpGet("{slug}/meta")]
-    public async Task<ActionResult<CommanderMeta>> Meta(
-        string slug, CancellationToken ct = default)
+    public async Task<IActionResult> Meta(
+        string slug, [FromQuery] bool explain = false, CancellationToken ct = default)
     {
+        if (explain)
+            return Sparql(recs.ExplainCommanderMeta(slug));
+
         var meta = await recs.GetCommanderMetaAsync(slug, ct);
         return Ok(meta);
     }
@@ -100,7 +110,7 @@ public sealed class CommandersController(
     /// the build to stay at or below that Commander Bracket.
     /// </summary>
     [HttpGet("{slug}/build-deck")]
-    public async Task<ActionResult<BudgetDeck>> BuildDeck(
+    public async Task<IActionResult> BuildDeck(
         string slug,
         [FromQuery] decimal totalBudgetEur,
         [FromQuery] int? maxBracket,
@@ -108,6 +118,7 @@ public sealed class CommandersController(
         [FromQuery] decimal? minSynergy,
         [FromQuery] bool excludeBasicLands = false,
         [FromQuery] string? excludeCategories = null,
+        [FromQuery] bool explain = false,
         CancellationToken ct = default)
     {
         if (totalBudgetEur <= 0)
@@ -123,6 +134,9 @@ public sealed class CommandersController(
             ExcludeBasicLands: excludeBasicLands,
             ExcludeCategories: Split(excludeCategories),
             Limit:             300);
+        if (explain)
+            return Sparql(recs.ExplainBuildDeck(slug, filter));
+
         var deck = await recs.BuildBudgetDeckAsync(slug, totalBudgetEur, filter, maxBracket, ct);
         return Ok(deck);
     }
@@ -154,6 +168,18 @@ public sealed class CommandersController(
         var commanderName = deck.CommanderName ?? await commanderNames.ResolveAsync(slug, ct);
         return Content(DeckTextExporter.ToText(deck.Cards, commanderName), "text/plain; charset=utf-8");
     }
+
+    /// <summary>
+    /// Render queries as a runnable .sparql document rather than JSON, so it can
+    /// go straight to a file:
+    ///
+    ///   curl '.../build-deck?totalBudgetEur=120&amp;explain=true' &gt; pool.sparql
+    ///   bin/sparql pool.sparql
+    ///
+    /// Purposes are emitted as SPARQL comments, which are legal syntax.
+    /// </summary>
+    private ContentResult Sparql(IReadOnlyList<SparqlExplanation> queries)
+        => Content(SparqlExplanation.ToDocument(queries), "text/plain; charset=utf-8");
 
     private static IReadOnlyList<string>? Split(string? csv)
         => string.IsNullOrWhiteSpace(csv)

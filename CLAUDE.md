@@ -504,6 +504,27 @@ g.Assert(card, g.CreateUriNode("mtg:hasPriceEur"),
                g.CreateLiteralNode(price.ToString(), new Uri(XmlSpecsHelper.XmlSchemaDataTypeDecimal)));
 ```
 
+### Seeing the SPARQL a request actually runs
+
+The deck queries are generated from request parameters, so the files in
+`queries/` are examples, not the real thing. Add `explain=true` to any of
+`/recommendations`, `/build-deck`, `/meta` or `/discover` and you get the exact
+query for those parameters as `text/plain`, with the rationale as SPARQL
+comments so the output is runnable as-is:
+
+```bash
+bin/explain '/api/commanders/xyris-the-writhing-storm/build-deck?totalBudgetEur=120&maxBracket=3'
+bin/explain '/api/commanders/discover?maxBracket=3&maxBudgetEur=200' --run
+bin/explain '/api/commanders/xyris-the-writhing-storm/meta' --save out/
+```
+
+Two things the SPARQL will not show you, because they do not happen in the
+graph: **ranking and packing are C#**, over the rows the query returns (Wilson
+lower bound for commanders, the shrunk win-rate blend for cards, the greedy
+budget knapsack), and the **Commander Bracket comes from Commander Spellbook
+over HTTP**. Re-running the query and sorting by `winRate` will not reproduce
+the API's ordering.
+
 ### Commander slugs must match EDHREC exactly
 
 `MtgVocab.Slugify` keys three separate things: EDHREC's page URL, the Scryfall
