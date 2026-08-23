@@ -1,0 +1,74 @@
+# ===== commander-discovery =====
+# Commanders matching your bracket and budget, aggregated per command
+# zone.
+#
+# The inner subquery keys each deck by MIN|MAX of its commander slugs,
+# so a partner pair counts once instead of crediting the pair's record
+# to each half. A third of EDH decks are pairs.
+#
+# The bracket cap becomes a cap on hasGameChangerCount, which is
+# precomputed per deck at ingestion — summing card prices and Game
+# Changers per deck at query time would be unusable at this scale.
+#
+# Ranking is NOT in this query: the rows come back ordered by total
+# wins, then C# re-ranks them by the Wilson lower bound of the win
+# rate so thin samples sink. Ordering these results by winRate
+# directly will not reproduce the API's list.
+
+PREFIX mtg: <http://example.org/mtg#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?cmdKey (SAMPLE(?cmdNames) AS ?name)
+       (COUNT(DISTINCT ?deck) AS ?deckCount)
+       (SUM(?deckWins)   AS ?wins)
+       (SUM(?deckLosses) AS ?losses)
+       (SUM(?isTopCut)   AS ?topCuts)
+       (MIN(?price)      AS ?minPrice)
+       (AVG(?price)      AS ?avgPrice)
+       (MAX(?gc)         AS ?maxGameChangers)
+       (SAMPLE(?img)     AS ?imageUrl)
+WHERE {
+  # A third of EDH decks run a partner or background pair, so the unit of
+  # interest is the command zone, not one card: Thrasios on his own is not a
+  # deck, and crediting the pair's record to each half twice over would rank
+  # partner halves above real single commanders.
+  #
+  # The key is MIN|MAX of the slugs rather than a GROUP_CONCAT, so it does not
+  # depend on the order the store happens to return them in — otherwise the
+  # same pair splits into "a+b" and "b+a".
+  {
+    SELECT ?deck
+           (CONCAT(MIN(?slug), "|", MAX(?slug)) AS ?cmdKey)
+           (GROUP_CONCAT(DISTINCT ?cname; SEPARATOR=" + ") AS ?cmdNames)
+           (SAMPLE(?cimg) AS ?img)
+    WHERE {
+      ?deck mtg:hasCommander ?commander .
+      ?commander mtg:hasName ?cname .
+      BIND (STRAFTER(STR(?commander), "commander/") AS ?slug)
+      OPTIONAL { ?commander mtg:isCardOf ?cmdCard . ?cmdCard mtg:hasImageUrl ?cimg }
+    }
+    GROUP BY ?deck
+  }
+
+  ?deck mtg:hasGameChangerCount ?gc .
+  OPTIONAL { ?deck mtg:hasTotalPriceEur ?price }
+
+  # One entry per deck, so summing over rows sums over entries.
+  ?entry mtg:hasDeck ?deck ; mtg:hasPlacement ?placement .
+  OPTIONAL { ?entry mtg:inTournament ?t . ?t mtg:hasTopCutSize ?cutSize }
+  OPTIONAL { ?entry mtg:hasWinsSwiss     ?ws }
+  OPTIONAL { ?entry mtg:hasWinsBracket   ?wb }
+  OPTIONAL { ?entry mtg:hasLossesSwiss   ?ls }
+  OPTIONAL { ?entry mtg:hasLossesBracket ?lb }
+  BIND (COALESCE(?ws, 0) + COALESCE(?wb, 0) AS ?deckWins)
+  BIND (COALESCE(?ls, 0) + COALESCE(?lb, 0) AS ?deckLosses)
+  # The event's own cut, not a flat 16 — 16th of 20 players is not a top cut.
+  BIND (IF(?placement <= COALESCE(?cutSize, 16), 1, 0) AS ?isTopCut)
+
+      FILTER (?gc <= 3)
+      FILTER (BOUND(?price) && ?price <= "200.0"^^xsd:decimal)
+}
+GROUP BY ?cmdKey
+HAVING (COUNT(DISTINCT ?deck) >= 3)
+ORDER BY DESC(SUM(?deckWins))
+LIMIT 400

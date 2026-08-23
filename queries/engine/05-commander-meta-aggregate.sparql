@@ -1,0 +1,32 @@
+# ===== commander-meta =====
+# EDHTop16's commander-level aggregates, plus top-4 and top-16 deck
+# counts derived from ingested tournament entries.
+
+PREFIX mtg: <http://example.org/mtg#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?entries ?topCuts ?winRate ?conversion ?metaShare
+       (COUNT(DISTINCT ?top4Deck) AS ?top4)
+       (COUNT(DISTINCT ?top16Deck) AS ?top16)
+       (MAX(?date) AS ?latestDate)
+WHERE {
+  OPTIONAL { <http://example.org/mtg#commander/xyris-the-writhing-storm> mtg:hasTournamentEntryCount    ?entries }
+  OPTIONAL { <http://example.org/mtg#commander/xyris-the-writhing-storm> mtg:hasTournamentTopCutCount   ?topCuts }
+  OPTIONAL { <http://example.org/mtg#commander/xyris-the-writhing-storm> mtg:hasTournamentWinRate       ?winRate }
+  OPTIONAL { <http://example.org/mtg#commander/xyris-the-writhing-storm> mtg:hasTournamentConversionRate ?conversion }
+  OPTIONAL { <http://example.org/mtg#commander/xyris-the-writhing-storm> mtg:hasMetaShare               ?metaShare }
+  OPTIONAL {
+    ?entry4 mtg:hasPlacement ?p4 ; mtg:hasDeck ?top4Deck .
+    ?top4Deck mtg:hasCommander <http://example.org/mtg#commander/xyris-the-writhing-storm> .
+    FILTER (?p4 <= 4)
+  }
+  OPTIONAL {
+    ?entry16 mtg:hasPlacement ?p16 ; mtg:hasDeck ?top16Deck ; mtg:inTournament ?t .
+    ?top16Deck mtg:hasCommander <http://example.org/mtg#commander/xyris-the-writhing-storm> .
+    ?t mtg:hasDate ?date .
+    FILTER (?p16 <= 16)
+  }
+}
+GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare
+
+

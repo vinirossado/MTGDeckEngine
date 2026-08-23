@@ -1,0 +1,14 @@
+# ===== basic-lands =====
+# Real oracle ids and art for the basic lands used to complete the
+# manabase. They are looked up rather than invented so the cards
+# render; the builder then prices them at zero regardless.
+
+PREFIX mtg: <http://example.org/mtg#>
+
+SELECT ?name ?oracleId ?typeLine (SAMPLE(?img) AS ?imageUrl) WHERE {
+  ?card mtg:hasName ?name ; mtg:hasOracleId ?oracleId ; mtg:hasTypeLine ?typeLine .
+  OPTIONAL { ?card mtg:hasImageUrl ?img }
+  VALUES ?name { "Plains" "Island" "Swamp" "Mountain" "Forest" "Wastes" }
+  FILTER (STRSTARTS(?typeLine, "Basic Land"))
+}
+GROUP BY ?name ?oracleId ?typeLine
