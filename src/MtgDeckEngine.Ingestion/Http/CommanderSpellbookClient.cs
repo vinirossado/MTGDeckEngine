@@ -99,6 +99,15 @@ public sealed class CommanderSpellbookClient(
             .Where(c => c.DefinitelyTwoCard && c.Relevant)
             .ToList();
 
+        var comboParticipants = twoCardCombos
+            .Select(c => (IReadOnlyList<string>)(c.Combo?.Uses
+                .Select(u => u.Card?.Name)
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Select(n => n!)
+                .ToList() ?? []))
+            .Where(names => names.Count > 0)
+            .ToList();
+
         var reasons = new List<string> { $"Commander Spellbook bracket tag '{r.BracketTag}' → {label}." };
         if (banned.Count > 0)
             reasons.Add($"Banned in Commander: {string.Join(", ", banned)}.");
@@ -128,7 +137,8 @@ public sealed class CommanderSpellbookClient(
             Reasons:           reasons,
             // Combo-aware and sourced from the maintained database, so unlike
             // the local evaluator this is not a floor-only guess.
-            IsEstimate:        false);
+            IsEstimate:        false,
+            TwoCardCombos:     comboParticipants);
     }
 
     /// <summary>

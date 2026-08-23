@@ -263,15 +263,127 @@ WHERE {{
         UpgradeWithinBudget(
             chosen, inDeck, lands, nonlands, score, totalBudgetEur, constraint, ref running);
 
+        // ---- Phase C — bring the deck under the bracket cap ----
+        var bracket = await EnforceBracketCapAsync(
+            commanderSlug, chosen, inDeck, lands, nonlands, score,
+            totalBudgetEur, constraint, maxBracket, ct).ConfigureAwait(false);
+
         var total = chosen.Sum(c => c.PriceEur ?? 0m);
-        var bracket = await _brackets
-            .EvaluateAsync(commanderSlug, chosen.Select(c => c.Name).ToList(), ct)
-            .ConfigureAwait(false);
         var commanderName = commanderNames is null
             ? null
             : await commanderNames.ResolveAsync(commanderSlug, ct).ConfigureAwait(false);
         return new BudgetDeck(
             commanderSlug, total, chosen.Count, chosen, bracket, commanderName);
+    }
+
+    /// <summary>
+    /// Evaluate the bracket and, if it overshoots the cap because of two-card
+    /// infinite combos, break them and try again.
+    ///
+    /// Combos are the one bracket trigger the builder cannot see while building:
+    /// they are a property of card *pairs*, not of any card's flags, and only
+    /// Commander Spellbook knows them. So the Game Changer cap could hold
+    /// perfectly and the deck still come back cEDH — which it did for Kefka,
+    /// whose commander combos with Psychosis Crawler.
+    ///
+    /// Checking each candidate during the greedy upgrade would mean a network
+    /// call per candidate, hundreds per build. Repairing afterwards costs one
+    /// extra call per round instead, and converges in one or two.
+    /// </summary>
+    private async Task<DeckBracket> EnforceBracketCapAsync(
+        string commanderSlug,
+        List<CardRecommendation> chosen,
+        HashSet<string> inDeck,
+        List<CardRecommendation> lands,
+        List<CardRecommendation> nonlands,
+        IReadOnlyDictionary<string, double> score,
+        decimal budget,
+        BracketConstraint? constraint,
+        int? maxBracket,
+        CancellationToken ct)
+    {
+        const int maxRepairRounds = 3;
+
+        var bracket = await _brackets
+            .EvaluateAsync(commanderSlug, chosen.Select(c => c.Name).ToList(), ct)
+            .ConfigureAwait(false);
+
+        // Brackets 4 and 5 permit combos, so there is nothing to repair.
+        if (maxBracket is not int cap || cap >= 4) return bracket;
+
+        var banned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        for (var round = 0; round < maxRepairRounds; round++)
+        {
+            if (bracket.Level <= cap) break;
+            if (bracket.TwoCardCombos is not { Count: > 0 }) break;   // over cap for some other reason
+
+            var removedAny = false;
+            foreach (var combo in bracket.TwoCardCombos)
+            {
+                // Breaking one half is enough. Drop the lowest-scoring
+                // participant that is actually removable — the commander itself
+                // is not in the 99, and a card we already replaced is gone.
+                var victim = combo
+                    .Select(name => chosen.FirstOrDefault(c =>
+                        string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase)))
+                    .Where(c => c is not null)
+                    .OrderBy(c => ScoreOf(score, c!))
+                    .FirstOrDefault();
+                if (victim is null) continue;      // e.g. combo runs through the commander
+
+                banned.Add(victim.Name);
+                chosen.Remove(victim);
+                inDeck.Remove(victim.OracleId);
+                removedAny = true;
+            }
+
+            // Nothing we could remove — every combo runs through the commander,
+            // which cannot be cut. Report the real bracket rather than looping.
+            if (!removedAny) break;
+
+            RefillAndUpgrade(chosen, inDeck, lands, nonlands, score, budget, constraint, banned);
+
+            bracket = await _brackets
+                .EvaluateAsync(commanderSlug, chosen.Select(c => c.Name).ToList(), ct)
+                .ConfigureAwait(false);
+        }
+
+        return bracket;
+    }
+
+    /// <summary>
+    /// Top the deck back up to 99 after cards were cut, then re-run the upgrade
+    /// pass. <paramref name="banned"/> holds names that must not come back —
+    /// without it the upgrade would immediately re-pick the combo piece it just
+    /// removed, since that is exactly the card it rates highest.
+    /// </summary>
+    private static void RefillAndUpgrade(
+        List<CardRecommendation> chosen,
+        HashSet<string> inDeck,
+        List<CardRecommendation> lands,
+        List<CardRecommendation> nonlands,
+        IReadOnlyDictionary<string, double> score,
+        decimal budget,
+        BracketConstraint? constraint,
+        IReadOnlySet<string> banned)
+    {
+        var quotas = DeckBuildQuotas.Default;
+        var running = chosen.Sum(c => c.PriceEur ?? 0m);
+
+        foreach (var card in nonlands
+                     .Where(c => !banned.Contains(c.Name))
+                     .OrderBy(c => c.PriceEur ?? 0m))
+        {
+            if (chosen.Count >= quotas.Sum) break;
+            if (constraint is not null && IsBannedByBracket(constraint, card)) continue;
+            TryTake(card, budget, chosen, inDeck, ref running);
+        }
+
+        UpgradeWithinBudget(
+            chosen, inDeck, lands,
+            nonlands.Where(c => !banned.Contains(c.Name)).ToList(),
+            score, budget, constraint, ref running);
     }
 
     private static bool TryTake(

@@ -524,19 +524,29 @@ a different subject. Every commander-facing query keys on the slug node, so a
 commander ingested by name was invisible in the commander list until that node
 existed.
 
-### `maxBracket` is a cap on what the builder can see
+### `maxBracket` is enforced in two passes
 
-It constrains Game Changers, mass land denial and extra turns — all readable
-from card flags. It cannot constrain **two-card infinite combos**, which are a
-hard Bracket-4/5 trigger and are only detected afterwards by Commander
-Spellbook. So `maxBracket=3` can legitimately return a Bracket 5 deck:
+Card-level triggers — Game Changers, mass land denial, extra turns — are
+readable from card flags, so the builder constrains those while building.
 
-    build-deck?maxBracket=3  →  bracket 5, 2 Game Changers (within cap),
-                                3 two-card combos detected
+**Two-card infinite combos are not.** They are a property of card *pairs*, only
+Commander Spellbook knows them, and they are a hard Bracket-4/5 trigger. A build
+could therefore honour the Game Changer cap perfectly and still come back cEDH,
+which is exactly what happened to Kefka (whose commander combos with Psychosis
+Crawler).
 
-Closing that gap means checking candidate cards against the combo database
-during the greedy upgrade, which is a per-candidate network call — a design
-change, not a tweak.
+So the cap is enforced afterwards instead: evaluate, and if the bracket
+overshoots, break each reported combo by cutting its lowest-scoring participant,
+refill to 99 and re-evaluate. Up to 3 rounds, converging in 1 in practice.
+
+Two details that make it terminate:
+- Cut cards go on a ban list. Without it the upgrade pass immediately re-picks
+  the combo piece, since that is the card it rates highest.
+- A combo running through the commander cannot be broken — the commander is not
+  one of the 99. The loop detects that it removed nothing and reports the real
+  bracket rather than spinning.
+
+Caps of 4 and 5 permit combos, so no repair runs and no extra call is made.
 
 ### Tournament decks carry their commander (and their rollups)
 
