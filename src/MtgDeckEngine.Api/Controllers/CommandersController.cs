@@ -142,6 +142,66 @@ public sealed class CommandersController(
     }
 
     /// <summary>
+    /// A grid of buildable decks for the same commander and budget — one per
+    /// bracket × strategy — so the trade-offs are side by side instead of
+    /// collapsed into a single answer.
+    /// </summary>
+    /// <remarks>
+    /// Defaults to brackets 2, 3 and 4 across all four strategies: twelve
+    /// decks. Bracket 5 is absent on purpose — it is not derivable from a card
+    /// list, so asking for one is asking for a Bracket 4 deck.
+    ///
+    /// Narrow it with comma-separated <c>brackets</c> and <c>strategies</c>
+    /// (balanced, interactive, creatures, ramp). <c>includeCards=false</c>
+    /// returns just the summaries, which is a great deal smaller.
+    /// </remarks>
+    [HttpGet("{slug}/build-deck/options")]
+    public async Task<ActionResult<IReadOnlyList<DeckOption>>> BuildDeckOptions(
+        string slug,
+        [FromQuery] decimal totalBudgetEur,
+        [FromQuery] string? brackets = null,
+        [FromQuery] string? strategies = null,
+        [FromQuery] decimal? maxCardPriceEur = null,
+        [FromQuery] bool includeCards = true,
+        CancellationToken ct = default)
+    {
+        if (totalBudgetEur <= 0)
+            return BadRequest("totalBudgetEur must be > 0");
+
+        var wanted = ParseBrackets(brackets);
+        if (wanted is null)
+            return BadRequest("brackets must be comma-separated numbers between 1 and 5");
+
+        var filter = new RecommendationFilter(
+            MaxPriceEur:       maxCardPriceEur,
+            ExcludeBasicLands: false,
+            Limit:             300);
+
+        var options = await recs.BuildDeckOptionsAsync(
+            slug, totalBudgetEur, filter, wanted, Split(strategies), ct);
+
+        return Ok(includeCards
+            ? options
+            : options.Select(o => o with { Cards = [] }).ToList());
+    }
+
+    /// <summary>
+    /// Null signals a malformed list; empty means "not specified, use defaults".
+    /// </summary>
+    private static IReadOnlyList<int>? ParseBrackets(string? csv)
+    {
+        if (string.IsNullOrWhiteSpace(csv)) return [];
+        var parts = csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var result = new List<int>(parts.Length);
+        foreach (var p in parts)
+        {
+            if (!int.TryParse(p, out var b) || b is < 1 or > 5) return null;
+            result.Add(b);
+        }
+        return result;
+    }
+
+    /// <summary>
     /// Build a deck and return it as plain "N Card Name" text rather than JSON —
     /// the same parameters as build-deck, piped straight into a decklist you can
     /// paste into Moxfield/Archidekt.
