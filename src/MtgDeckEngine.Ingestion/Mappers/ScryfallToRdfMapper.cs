@@ -73,7 +73,7 @@ public static class ScryfallToRdfMapper
         => g.Assert(subject, g.CreateUriNode(new Uri(MtgVocab.Property(localProp))), obj);
 
     private static ILiteralNode Decimal(IGraph g, decimal d) =>
-        g.CreateLiteralNode(d.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        g.CreateLiteralNode(MtgDeckEngine.Core.RdfLiterals.Decimal(d),
             new Uri(XmlSpecsHelper.XmlSchemaDataTypeDecimal));
 
     private static ILiteralNode Bool(IGraph g, bool b) =>

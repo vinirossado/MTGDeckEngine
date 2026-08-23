@@ -73,6 +73,24 @@ public sealed class SavedDeckService(IGraphRepository repo) : ISavedDeckService
         {
             Assert(g, deckNode, MtgVocab.Property("hasBracketLevel"), Int(g, bracket.Level));
             Assert(g, deckNode, MtgVocab.Property("hasBracketLabel"), g.CreateLiteralNode(bracket.Label));
+            // The reasoning is what makes a bracket actionable — "Bracket 3"
+            // alone does not tell you which cards put it there, and it cannot be
+            // recomputed on read without re-querying Commander Spellbook (whose
+            // verdict may since have changed). Persist the whole verdict.
+            Assert(g, deckNode, MtgVocab.Property("hasBracketIsEstimate"), Bool(g, bracket.IsEstimate));
+            Assert(g, deckNode, MtgVocab.Property("hasMassLandDenial"), Bool(g, bracket.HasMassLandDenial));
+            Assert(g, deckNode, MtgVocab.Property("hasExtraTurns"), Bool(g, bracket.HasExtraTurns));
+            foreach (var gc in bracket.GameChangersFound)
+                Assert(g, deckNode, MtgVocab.Property("hasGameChanger"), g.CreateLiteralNode(gc));
+            // Ordinal-tagged so the reasons come back in the order they were
+            // written; a plain repeated property has no order in RDF.
+            for (var i = 0; i < bracket.Reasons.Count; i++)
+            {
+                var reason = g.CreateUriNode(new Uri($"{MtgVocab.SavedDeckUri(id)}/reason/{i}"));
+                Assert(g, deckNode, MtgVocab.Property("hasBracketReason"), reason);
+                Assert(g, reason, MtgVocab.Property("hasOrdinal"), Int(g, i));
+                Assert(g, reason, MtgVocab.Property("hasText"), g.CreateLiteralNode(bracket.Reasons[i]));
+            }
         }
 
         // Card membership. Basic lands repeat, and RDF has no multiset, so each
@@ -156,6 +174,7 @@ ORDER BY DESC(?savedAt)";
 PREFIX mtg: <{MtgVocab.Namespace}>
 
 SELECT ?name ?commander ?total ?count ?savedAt ?notes ?budget ?bracketLevel ?bracketLabel ?commanderName
+       ?bracketIsEstimate ?bracketMld ?bracketExtraTurns
        ?ordinal ?cardName ?oracleId ?price ?typeLine ?category ?imageUrl
 WHERE {{
   GRAPH <{GraphUri}> {{
@@ -169,6 +188,9 @@ WHERE {{
     OPTIONAL {{ <{deckUri}> mtg:hasBracketLevel  ?bracketLevel }}
     OPTIONAL {{ <{deckUri}> mtg:hasBracketLabel  ?bracketLabel }}
     OPTIONAL {{ <{deckUri}> mtg:hasCommanderName ?commanderName }}
+    OPTIONAL {{ <{deckUri}> mtg:hasBracketIsEstimate ?bracketIsEstimate }}
+    OPTIONAL {{ <{deckUri}> mtg:hasMassLandDenial    ?bracketMld }}
+    OPTIONAL {{ <{deckUri}> mtg:hasExtraTurns        ?bracketExtraTurns }}
     OPTIONAL {{
       <{deckUri}> mtg:hasSlot ?slot .
       ?slot mtg:hasOrdinal  ?ordinal ;
@@ -206,16 +228,23 @@ ORDER BY ?ordinal";
         DeckBracket? bracket = null;
         if (Dec(first, "bracketLevel") is decimal lvl)
         {
+            // Reasons and Game Changers are fetched separately rather than
+            // joined above: the main query already fans out one row per card
+            // slot, and joining two more repeated properties would multiply
+            // 99 rows by every reason by every Game Changer.
+            var (reasons, gameChangers) =
+                await GetBracketDetailAsync(id, cancellationToken).ConfigureAwait(false);
             bracket = new DeckBracket(
                 Level:             (int)lvl,
                 Label:             Str(first, "bracketLabel") ?? "",
-                GameChangerCount:  0,
-                GameChangersFound: [],
-                HasMassLandDenial: false,
-                HasExtraTurns:     false,
-                // The bracket was computed at save time; only the verdict is
-                // persisted, so the detailed reasoning is not reconstructable.
-                Reasons:           ["Recorded when the deck was saved."]);
+                GameChangerCount:  gameChangers.Count,
+                GameChangersFound: gameChangers,
+                HasMassLandDenial: Bool(first, "bracketMld"),
+                HasExtraTurns:     Bool(first, "bracketExtraTurns"),
+                Reasons:           reasons.Count > 0
+                    ? reasons
+                    : ["Recorded when the deck was saved."],
+                IsEstimate:        Bool(first, "bracketIsEstimate"));
         }
 
         return new SavedDeck(
@@ -232,21 +261,67 @@ ORDER BY ?ordinal";
             CommanderName: Str(first, "commanderName"));
     }
 
+    /// <summary>
+    /// Bracket reasoning for one deck: the ordered explanation lines and the
+    /// Game Changers that were found. Kept out of the main deck query so the
+    /// per-card rows are not multiplied by them.
+    /// </summary>
+    private async Task<(IReadOnlyList<string> Reasons, IReadOnlyList<string> GameChangers)>
+        GetBracketDetailAsync(string id, CancellationToken cancellationToken)
+    {
+        var deckUri = MtgVocab.SavedDeckUri(id);
+        var sparql = $@"
+PREFIX mtg: <{MtgVocab.Namespace}>
+
+SELECT ?ordinal ?text ?gameChanger WHERE {{
+  GRAPH <{GraphUri}> {{
+    {{
+      <{deckUri}> mtg:hasBracketReason ?reason .
+      ?reason mtg:hasOrdinal ?ordinal ; mtg:hasText ?text .
+    }} UNION {{
+      <{deckUri}> mtg:hasGameChanger ?gameChanger .
+    }}
+  }}
+}}
+ORDER BY ?ordinal";
+
+        var rs = await repo.QueryAsync(sparql, cancellationToken).ConfigureAwait(false);
+        var reasons = new List<string>();
+        var gameChangers = new List<string>();
+        foreach (var row in rs)
+        {
+            if (Str(row, "text") is { } text) reasons.Add(text);
+            if (Str(row, "gameChanger") is { } gc) gameChangers.Add(gc);
+        }
+        gameChangers.Sort(StringComparer.OrdinalIgnoreCase);
+        return (reasons, gameChangers);
+    }
+
     public async Task<bool> DeleteAsync(string id, CancellationToken cancellationToken = default)
     {
         if (await GetAsync(id, cancellationToken).ConfigureAwait(false) is null) return false;
 
         var deckUri = MtgVocab.SavedDeckUri(id);
-        // Delete the deck node and every slot hanging off it. Slots are only
-        // ever referenced by their own deck, so this leaves nothing orphaned.
+        // Three independent statements rather than one pattern with two
+        // OPTIONALs. That earlier form cross-multiplied the deck's own triples
+        // by every slot triple by every reason triple — ~5,000 solutions for a
+        // 99-card deck — and the store silently dropped the tail, leaving the
+        // last slots and the deck's own hasBudgetEur behind. Each statement
+        // here is linear in the thing it deletes.
+        //
+        // Order matters: the slot and reason nodes are only reachable through
+        // the deck node, so they have to go before it does.
         var update = $@"
 PREFIX mtg: <{MtgVocab.Namespace}>
 
-DELETE {{ GRAPH <{GraphUri}> {{ <{deckUri}> ?p ?o . ?slot ?sp ?so . }} }}
-WHERE  {{ GRAPH <{GraphUri}> {{
-           <{deckUri}> ?p ?o .
-           OPTIONAL {{ <{deckUri}> mtg:hasSlot ?slot . ?slot ?sp ?so . }}
-         }} }}";
+DELETE {{ GRAPH <{GraphUri}> {{ ?slot ?p ?o }} }}
+WHERE  {{ GRAPH <{GraphUri}> {{ <{deckUri}> mtg:hasSlot ?slot . ?slot ?p ?o }} }} ;
+
+DELETE {{ GRAPH <{GraphUri}> {{ ?reason ?p ?o }} }}
+WHERE  {{ GRAPH <{GraphUri}> {{ <{deckUri}> mtg:hasBracketReason ?reason . ?reason ?p ?o }} }} ;
+
+DELETE {{ GRAPH <{GraphUri}> {{ <{deckUri}> ?p ?o }} }}
+WHERE  {{ GRAPH <{GraphUri}> {{ <{deckUri}> ?p ?o }} }}";
         await repo.UpdateAsync(update, cancellationToken).ConfigureAwait(false);
         return true;
     }
@@ -275,8 +350,12 @@ WHERE  {{ GRAPH <{GraphUri}> {{
             new Uri(XmlSpecsHelper.XmlSchemaDataTypeInteger));
 
     private static ILiteralNode Dec(IGraph g, decimal d)
-        => g.CreateLiteralNode(d.ToString(CultureInfo.InvariantCulture),
+        => g.CreateLiteralNode(RdfLiterals.Decimal(d),
             new Uri(XmlSpecsHelper.XmlSchemaDataTypeDecimal));
+
+    private static ILiteralNode Bool(IGraph g, bool b)
+        => g.CreateLiteralNode(b ? "true" : "false",
+            new Uri(XmlSpecsHelper.XmlSchemaDataTypeBoolean));
 
     private static ILiteralNode DateTime(IGraph g, DateTimeOffset at)
         => g.CreateLiteralNode(at.ToString("o", CultureInfo.InvariantCulture),
@@ -284,6 +363,9 @@ WHERE  {{ GRAPH <{GraphUri}> {{
 
     private static string? Str(VDS.RDF.Query.ISparqlResult row, string var)
         => row.HasBoundValue(var) && row[var] is ILiteralNode lit ? lit.Value : null;
+
+    private static bool Bool(VDS.RDF.Query.ISparqlResult row, string var)
+        => Str(row, var) is { } v && bool.TryParse(v, out var b) && b;
 
     private static decimal? Dec(VDS.RDF.Query.ISparqlResult row, string var)
     {

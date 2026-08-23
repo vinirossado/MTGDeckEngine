@@ -116,7 +116,7 @@ public static class EdhTop16ToRdfMapper
             new Uri(XmlSpecsHelper.XmlSchemaDataTypeInteger));
 
     private static ILiteralNode Decimal(IGraph g, decimal d) =>
-        g.CreateLiteralNode(d.ToString(CultureInfo.InvariantCulture),
+        g.CreateLiteralNode(MtgDeckEngine.Core.RdfLiterals.Decimal(d),
             new Uri(XmlSpecsHelper.XmlSchemaDataTypeDecimal));
 
     private static ILiteralNode Date(IGraph g, DateOnly d) =>
