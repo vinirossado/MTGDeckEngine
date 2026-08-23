@@ -31,6 +31,36 @@ public static class ScryfallToRdfMapper
             IsGameChanger: c.GameChanger);
     }
 
+    /// <summary>
+    /// Assert the <c>mtg:commander/{slug}</c> node: typed, named, and linked to
+    /// the card it comes from.
+    ///
+    /// This is a different subject from the card. <see cref="AssertCard"/> types
+    /// <c>mtg:card/{oracleId}</c> as a Commander when it is a legal one, but
+    /// every commander-facing query keys on the slug node — so without this a
+    /// commander is invisible to the commander list no matter how much of its
+    /// data was ingested.
+    ///
+    /// <paramref name="slug"/> is passed in rather than derived from the name
+    /// because the caller's slug is authoritative: EDHREC's page slug is what
+    /// the commander-scoped context graph is named after, and re-deriving it
+    /// risks the two drifting apart.
+    /// </summary>
+    public static void AssertCommanderNode(IGraph g, string slug, CardDto card)
+    {
+        var commander = g.CreateUriNode(new Uri(MtgVocab.CommanderUri(slug)));
+        g.Assert(commander,
+            g.CreateUriNode(new Uri(RdfSpecsHelper.RdfType)),
+            g.CreateUriNode(new Uri(MtgVocab.Class("Commander"))));
+        Assert(g, commander, "hasName", g.CreateLiteralNode(card.Name));
+        if (!string.IsNullOrEmpty(card.OracleId))
+        {
+            Assert(g, commander, "hasOracleId", g.CreateLiteralNode(card.OracleId));
+            Assert(g, commander, "isCardOf",
+                g.CreateUriNode(new Uri(MtgVocab.CardUri(card.OracleId))));
+        }
+    }
+
     public static void AssertCard(IGraph g, CardDto card)
     {
         var cardNode = g.CreateUriNode(new Uri(MtgVocab.CardUri(card.OracleId)));

@@ -26,4 +26,12 @@ public sealed record CommanderSummary(
     string CommanderSlug,
     string Name,
     int TournamentEntryCount,
-    int TopCutCount);
+    int TopCutCount,
+    /// <summary>Tournament decks in the graph for this commander.</summary>
+    int DeckCount = 0,
+    /// <summary>
+    /// Whether EDHREC data was ingested for this commander specifically, i.e.
+    /// someone asked for it by name. Drives ordering: a commander you just
+    /// ingested must be findable, however little tournament data it has.
+    /// </summary>
+    bool HasEdhrecData = false);

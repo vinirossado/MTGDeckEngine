@@ -126,12 +126,17 @@ public static class TopDeckToRdfMapper
                         // asserted per card rather than assuming one.
                         if (isCommander)
                         {
+                            // Slugify folds a "Front // Back" name to its front
+                            // face, which is the slug EDHREC uses — so a deck
+                            // ingested here lands on the same commander node as
+                            // one ingested from EDHREC by name.
+                            var cmdSlug = MtgVocab.Slugify(card.Name);
                             Assert(g, deck, "hasCommander",
-                                g.CreateUriNode(new Uri(MtgVocab.CommanderUri(MtgVocab.Slugify(card.Name)))));
-                            // And make that commander URI resolvable: without a
-                            // name and type on it, every commander-facing query
-                            // sees a bare URI it cannot label.
-                            AssertCommanderIdentity(g, card);
+                                g.CreateUriNode(new Uri(MtgVocab.CommanderUri(cmdSlug))));
+                            // Without a name and type on that URI, every
+                            // commander-facing query sees a node it cannot label.
+                            ScryfallToRdfMapper.AssertCommanderNode(
+                                g, cmdSlug, ScryfallToRdfMapper.ToDto(card));
                         }
 
                         // Also write the global card facts (oracleId / name / type /
@@ -224,24 +229,6 @@ public static class TopDeckToRdfMapper
                 yield return (namePart, qty, inCommandZone);
             else
                 yield return (line, 1, inCommandZone);
-        }
-    }
-
-    /// <summary>
-    /// Assert the commander URI as a first-class node: typed, named, and tied
-    /// back to the card it came from. EDHREC-ingested commanders get this via
-    /// the commander context; TopDeck-only ones would otherwise be nameless.
-    /// </summary>
-    private static void AssertCommanderIdentity(IGraph g, Dto.ScryfallCard card)
-    {
-        var commander = g.CreateUriNode(new Uri(MtgVocab.CommanderUri(MtgVocab.Slugify(card.Name))));
-        AssertType(g, commander, "Commander");
-        Assert(g, commander, "hasName", g.CreateLiteralNode(card.Name));
-        if (card.OracleId is { Length: > 0 })
-        {
-            Assert(g, commander, "hasOracleId", g.CreateLiteralNode(card.OracleId));
-            Assert(g, commander, "isCardOf",
-                g.CreateUriNode(new Uri(MtgVocab.CardUri(card.OracleId))));
         }
     }
 

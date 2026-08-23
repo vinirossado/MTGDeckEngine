@@ -52,7 +52,11 @@ public static class IngestionServiceCollectionExtensions
         {
             c.DefaultRequestHeaders.Add("Accept", "application/json");
             c.DefaultRequestHeaders.Add("User-Agent", "MtgDeckEngine/0.3 (+phase3)");
-            c.Timeout = TimeSpan.FromSeconds(60);
+            // One request returns every EDH tournament in the window with full
+            // decklists — tens of MB. It has been observed at 32s and has timed
+            // out at 60s; this is a bulk fetch, not an interactive call, so give
+            // it the same headroom as the Scryfall bulk download.
+            c.Timeout = TimeSpan.FromMinutes(5);
             // TopDeck.gg auth: bare API key in the Authorization header (no "Bearer" prefix).
             var key = sp.GetRequiredService<IOptions<TopDeckOptions>>().Value.ApiKey;
             if (!string.IsNullOrWhiteSpace(key))
