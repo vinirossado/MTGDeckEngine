@@ -72,14 +72,27 @@ public sealed class CommanderIngestor(
         logger.LogInformation("Scryfall cache resolved {Hits}/{Total} cards ({Misses} misses)",
             hits, distinctNames.Count, misses);
 
-        // Make sure the commander itself is in the graph as Commander-typed.
-        if (!nameToOracleId.ContainsKey(SlugToCommanderName(slug)) &&
-            scryfallCache.TryGetByName(SlugToCommanderName(slug), out var commanderCard) &&
-            commanderCard.OracleId is not null)
+        // The commander itself. Resolved through the slug index rather than by
+        // un-slugifying the name: that round-trip is lossy and never matched a
+        // double-faced card, whose printed name is "Front // Back".
+        //
+        // Asserting mtg:commander/{slug} here is what makes an ingested
+        // commander visible at all — the commander list keys on that node, and
+        // nothing else on the EDHREC path was creating it, so a commander you
+        // ingested by name simply never showed up.
+        if (scryfallCache.TryGetBySlug(slug, out var commanderCard)
+            && commanderCard.OracleId is not null)
         {
             var dto = ScryfallToRdfMapper.ToDto(commanderCard);
             ScryfallToRdfMapper.AssertCard(globalGraph, dto);
+            ScryfallToRdfMapper.AssertCommanderNode(globalGraph, slug, dto);
             nameToOracleId[commanderCard.Name] = dto.OracleId;
+        }
+        else
+        {
+            logger.LogWarning(
+                "Could not resolve commander card for slug {Slug}; it will not appear in the commander list.",
+                slug);
         }
         _ = delayMs; // no longer needed — cache lookups are local
         _ = scryfall; // kept on the type for future incremental lookups

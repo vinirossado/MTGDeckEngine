@@ -504,6 +504,40 @@ g.Assert(card, g.CreateUriNode("mtg:hasPriceEur"),
                g.CreateLiteralNode(price.ToString(), new Uri(XmlSpecsHelper.XmlSchemaDataTypeDecimal)));
 ```
 
+### Commander slugs must match EDHREC exactly
+
+`MtgVocab.Slugify` keys three separate things: EDHREC's page URL, the Scryfall
+bulk cache's slug index, and every `mtg:commander/{slug}` URI in the graph. If
+it disagrees with EDHREC by one character, the commander's data lands under one
+slug and its identity node under another, and they never join.
+
+The rules that a naive character map gets wrong: double-faced cards slug on the
+**front face only** (`Kefka, Court Mage // Kefka, Ruler of Ruin` →
+`kefka-court-mage`), apostrophes are **dropped** rather than turned into
+separators (`Clachan's Heart` → `clachans-heart`), and diacritics are folded.
+The original version passed unknown characters straight through, which put
+`//`, `&` and `û` into 47 commander URIs.
+
+**The EDHREC ingestion path must assert `mtg:commander/{slug}` itself.**
+`ScryfallToRdfMapper.AssertCard` types the *card* node as a Commander, which is
+a different subject. Every commander-facing query keys on the slug node, so a
+commander ingested by name was invisible in the commander list until that node
+existed.
+
+### `maxBracket` is a cap on what the builder can see
+
+It constrains Game Changers, mass land denial and extra turns — all readable
+from card flags. It cannot constrain **two-card infinite combos**, which are a
+hard Bracket-4/5 trigger and are only detected afterwards by Commander
+Spellbook. So `maxBracket=3` can legitimately return a Bracket 5 deck:
+
+    build-deck?maxBracket=3  →  bracket 5, 2 Game Changers (within cap),
+                                3 two-card combos detected
+
+Closing that gap means checking candidate cards against the combo database
+during the greedy upgrade, which is a per-candidate network call — a design
+change, not a tweak.
+
 ### Tournament decks carry their commander (and their rollups)
 
 TopDeck.gg wraps EDH lists in `~~Commanders~~` / `~~Mainboard~~` sections. The

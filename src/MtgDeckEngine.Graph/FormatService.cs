@@ -133,16 +133,35 @@ LIMIT {lim}";
 
     public async Task<IReadOnlyList<CommanderSummary>> ListCommandersAsync(int limit, CancellationToken ct)
     {
-        var lim = Math.Clamp(limit, 1, 500);
+        var lim = Math.Clamp(limit, 1, 1000);
+
+        // Ordering matters more than the cap here. Sorting on the EDHTop16
+        // aggregate alone put every commander without one — including any you
+        // had just ingested — into an arbitrary tail that the LIMIT cut off.
+        // A commander someone asked for by name has EDHREC context, so that
+        // sorts first, then tournament presence, then name for stability.
         var sparql = $@"
 PREFIX mtg: <{MtgVocab.Namespace}>
-SELECT ?commander ?name ?entries ?topCuts WHERE {{
+SELECT ?commander ?name ?entries ?topCuts ?deckCount ?hasEdhrec WHERE {{
   ?commander a mtg:Commander ;
              mtg:hasName ?name .
   OPTIONAL {{ ?commander mtg:hasTournamentEntryCount ?entries }}
   OPTIONAL {{ ?commander mtg:hasTournamentTopCutCount ?topCuts }}
+
+  # Grouped subquery, not an inline join: a commander has many decks and each
+  # would otherwise multiply its row.
+  OPTIONAL {{
+    SELECT ?commander (COUNT(DISTINCT ?deck) AS ?deckCount) WHERE {{
+      ?deck mtg:hasCommander ?commander
+    }} GROUP BY ?commander
+  }}
+
+  # The commander-scoped EDHREC graph is named after the same slug, so it can
+  # be derived from the commander URI rather than passed in.
+  BIND (IRI(REPLACE(STR(?commander), ""#commander/"", ""#context/"")) AS ?ctx)
+  BIND (EXISTS {{ GRAPH ?ctx {{ ?ctxCard mtg:hasInclusionPct ?ctxIncl }} }} AS ?hasEdhrec)
 }}
-ORDER BY DESC(?entries)
+ORDER BY DESC(?hasEdhrec) DESC(?deckCount) DESC(?entries) ?name
 LIMIT {lim}";
 
         var rs = await repo.QueryAsync(sparql, ct).ConfigureAwait(false);
@@ -157,10 +176,15 @@ LIMIT {lim}";
                 CommanderSlug:        slug,
                 Name:                 Str(row, "name") ?? "",
                 TournamentEntryCount: (int)(Dec(row, "entries") ?? 0m),
-                TopCutCount:          (int)(Dec(row, "topCuts") ?? 0m)));
+                TopCutCount:          (int)(Dec(row, "topCuts") ?? 0m),
+                DeckCount:            (int)(Dec(row, "deckCount") ?? 0m),
+                HasEdhrecData:        Bool(row, "hasEdhrec")));
         }
         return list;
     }
+
+    private static bool Bool(VDS.RDF.Query.ISparqlResult row, string var)
+        => Str(row, var) is { } v && bool.TryParse(v, out var b) && b;
 
     private static string Fmt(decimal d) => d.ToString("0.############", CultureInfo.InvariantCulture);
 
