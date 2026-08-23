@@ -1,0 +1,25 @@
+# ===== commander-meta-derived =====
+# Fallback used when no EDHTop16 aggregate exists for the commander —
+# true for anything sourced only from TopDeck. Computes the same
+# figures from the tournament entries in the graph, counting a top cut
+# against the event's own cut size rather than a flat 16.
+
+PREFIX mtg: <http://example.org/mtg#>
+
+SELECT (COUNT(DISTINCT ?deck) AS ?deckCount)
+       (SUM(?wins) AS ?w) (SUM(?losses) AS ?l) (SUM(?isTopCut) AS ?topCuts)
+WHERE {
+  ?deck  mtg:hasCommander <http://example.org/mtg#commander/xyris-the-writhing-storm> .
+  ?entry mtg:hasDeck ?deck ; mtg:hasPlacement ?placement .
+  OPTIONAL { ?entry mtg:inTournament ?t . ?t mtg:hasTopCutSize ?cutSize }
+  OPTIONAL { ?entry mtg:hasWinsSwiss     ?ws }
+  OPTIONAL { ?entry mtg:hasWinsBracket   ?wb }
+  OPTIONAL { ?entry mtg:hasLossesSwiss   ?ls }
+  OPTIONAL { ?entry mtg:hasLossesBracket ?lb }
+  BIND (COALESCE(?ws, 0) + COALESCE(?wb, 0) AS ?wins)
+  BIND (COALESCE(?ls, 0) + COALESCE(?lb, 0) AS ?losses)
+  # Against the event's own cut, not a flat 16: in a 20-player tournament
+  # placing 16th is not a conversion, and assuming otherwise reported a 92%
+  # conversion rate for commanders that had simply attended small events.
+  BIND (IF(?placement <= COALESCE(?cutSize, 16), 1, 0) AS ?isTopCut)
+}

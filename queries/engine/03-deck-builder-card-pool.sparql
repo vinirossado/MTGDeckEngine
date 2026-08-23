@@ -1,0 +1,57 @@
+# ===== deck-pool =====
+# The candidate pool the builder draws from.
+#
+# Wider than /recommendations: RequireInclusion is off, so a card
+# that never appears on EDHREC still surfaces if it shows up in
+# this commander's tournament decks. Ranking, budget packing and
+# the bracket cap all happen in C# over these rows, not in SPARQL.
+
+PREFIX mtg:  <http://example.org/mtg#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?oracleId ?name ?categoryLabel ?inclusion ?synergy ?priceEur ?topCutCount ?wins ?losses ?imageUrl ?typeLine ?colorIdentity ?gameChanger WHERE {
+  OPTIONAL {
+  GRAPH <http://example.org/mtg#context/xyris-the-writhing-storm> {
+    ?card mtg:hasInclusionPct ?inclusion .
+    OPTIONAL { ?card mtg:hasSynergyScore ?synergy }
+  }
+  }
+  ?card mtg:hasOracleId ?oracleId ;
+        mtg:hasName     ?name ;
+        mtg:hasTypeLine ?typeLine .
+  OPTIONAL { SELECT ?card (MIN(?e) AS ?eurMin) WHERE { ?card mtg:hasPriceEur ?e } GROUP BY ?card }
+  OPTIONAL { SELECT ?card (MIN(?u) AS ?usdMin) WHERE { ?card mtg:hasPriceUsd ?u } GROUP BY ?card }
+  BIND (COALESCE(?eurMin, ?usdMin) AS ?priceEur)
+  OPTIONAL { SELECT ?card (SAMPLE(?img) AS ?imageUrl) WHERE { ?card mtg:hasImageUrl ?img } GROUP BY ?card }
+  OPTIONAL { ?card mtg:isGameChanger ?gameChanger }
+  OPTIONAL {
+    SELECT ?card (GROUP_CONCAT(DISTINCT ?ci; SEPARATOR=",") AS ?colorIdentity) WHERE {
+      ?card mtg:hasColorIdentity ?ciNode .
+      BIND (STRAFTER(STR(?ciNode), "color/") AS ?ci)
+    } GROUP BY ?card
+  }
+  OPTIONAL {
+    SELECT ?card (GROUP_CONCAT(DISTINCT ?lbl; SEPARATOR=",") AS ?categoryLabel) WHERE {
+      GRAPH <http://example.org/mtg#context/xyris-the-writhing-storm> { ?card mtg:inCategory ?cat . OPTIONAL { ?cat rdfs:label ?lbl } }
+    } GROUP BY ?card
+  }
+  OPTIONAL {
+    SELECT ?card (COUNT(DISTINCT ?deck) AS ?topCutCount)
+                 (SUM(?entryWins) AS ?wins) (SUM(?entryLosses) AS ?losses) WHERE {
+      ?entry mtg:hasPlacement ?p ; mtg:hasDeck ?deck .
+      ?deck  mtg:hasCommander <http://example.org/mtg#commander/xyris-the-writhing-storm> ; mtg:containsCard ?card .
+      OPTIONAL { ?entry mtg:hasWinsSwiss     ?ws }
+      OPTIONAL { ?entry mtg:hasWinsBracket   ?wb }
+      OPTIONAL { ?entry mtg:hasLossesSwiss   ?ls }
+      OPTIONAL { ?entry mtg:hasLossesBracket ?lb }
+      BIND (COALESCE(?ws, 0) + COALESCE(?wb, 0) AS ?entryWins)
+      BIND (COALESCE(?ls, 0) + COALESCE(?lb, 0) AS ?entryLosses)
+    } GROUP BY ?card
+  }
+  FILTER (BOUND(?inclusion) || BOUND(?topCutCount))
+}
+ORDER BY DESC(?topCutCount) DESC(?inclusion) DESC(?synergy)
+LIMIT 500
+
+
