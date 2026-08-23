@@ -92,16 +92,84 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
             && DateOnly.TryParse(latestStr, CultureInfo.InvariantCulture,
                 DateTimeStyles.None, out var parsed))
             latest = parsed;
+        var entries = Dec(row, "entries");
+        var topCuts = Dec(row, "topCuts");
+        var winRate = Dec(row, "winRate");
+
+        // EDHTop16 aggregates only exist for commanders we ingested from there
+        // by name. Since TopDeck ingestion started identifying commanders, the
+        // graph holds tournament decks for hundreds more — every one of which
+        // reported a flat zero here, which reads as "never played" rather than
+        // "we have no aggregate". Derive the figures from the entries we do hold.
+        var derived = entries is null
+            ? await GetDerivedMetaAsync(commanderUri, ct).ConfigureAwait(false)
+            : null;
+
+        var source = entries is not null ? CommanderMetaSource.EdhTop16Aggregate
+                   : derived is { DeckCount: > 0 } ? CommanderMetaSource.DerivedFromEntries
+                   : CommanderMetaSource.None;
+
         return new CommanderMeta(
             CommanderSlug:        commanderSlug,
-            TournamentEntryCount: (int)(Dec(row, "entries") ?? 0m),
-            TopCutCount:          (int)(Dec(row, "topCuts") ?? 0m),
-            WinRate:              Dec(row, "winRate"),
-            ConversionRate:       Dec(row, "conversion"),
+            TournamentEntryCount: (int)(entries ?? derived?.DeckCount ?? 0m),
+            TopCutCount:          (int)(topCuts ?? derived?.TopCuts ?? 0m),
+            WinRate:              winRate ?? derived?.WinRate,
+            ConversionRate:       Dec(row, "conversion") ?? derived?.ConversionRate,
+            // Deliberately not derived: meta share is this commander's slice of
+            // the whole format, and our slice of the format is not the format.
             MetaShare:            Dec(row, "metaShare"),
             Top4DeckCount:        (int)(Dec(row, "top4") ?? 0m),
             Top16DeckCount:       (int)(Dec(row, "top16") ?? 0m),
-            LatestTopCutDate:     latest);
+            LatestTopCutDate:     latest,
+            Source:               source);
+    }
+
+    private sealed record DerivedMeta(
+        int DeckCount, int TopCuts, decimal? WinRate, decimal? ConversionRate);
+
+    /// <summary>
+    /// Commander metrics computed from the tournament entries in this graph,
+    /// for commanders EDHTop16 never gave us aggregates for.
+    /// </summary>
+    private async Task<DerivedMeta?> GetDerivedMetaAsync(string commanderUri, CancellationToken ct)
+    {
+        var sparql = $@"
+PREFIX mtg: <{MtgVocab.Namespace}>
+
+SELECT (COUNT(DISTINCT ?deck) AS ?deckCount)
+       (SUM(?wins) AS ?w) (SUM(?losses) AS ?l) (SUM(?isTopCut) AS ?topCuts)
+WHERE {{
+  ?deck  mtg:hasCommander <{commanderUri}> .
+  ?entry mtg:hasDeck ?deck ; mtg:hasPlacement ?placement .
+  OPTIONAL {{ ?entry mtg:inTournament ?t . ?t mtg:hasTopCutSize ?cutSize }}
+  OPTIONAL {{ ?entry mtg:hasWinsSwiss     ?ws }}
+  OPTIONAL {{ ?entry mtg:hasWinsBracket   ?wb }}
+  OPTIONAL {{ ?entry mtg:hasLossesSwiss   ?ls }}
+  OPTIONAL {{ ?entry mtg:hasLossesBracket ?lb }}
+  BIND (COALESCE(?ws, 0) + COALESCE(?wb, 0) AS ?wins)
+  BIND (COALESCE(?ls, 0) + COALESCE(?lb, 0) AS ?losses)
+  # Against the event's own cut, not a flat 16: in a 20-player tournament
+  # placing 16th is not a conversion, and assuming otherwise reported a 92%
+  # conversion rate for commanders that had simply attended small events.
+  BIND (IF(?placement <= COALESCE(?cutSize, 16), 1, 0) AS ?isTopCut)
+}}";
+        var rs = await repo.QueryAsync(sparql, ct).ConfigureAwait(false);
+        if (rs.Count == 0) return null;
+
+        var row = rs.First();
+        var decks = (int)(Dec(row, "deckCount") ?? 0m);
+        if (decks == 0) return null;
+
+        var wins   = Dec(row, "w") ?? 0m;
+        var losses = Dec(row, "l") ?? 0m;
+        var games  = wins + losses;
+        var cuts   = (int)(Dec(row, "topCuts") ?? 0m);
+
+        return new DerivedMeta(
+            DeckCount:      decks,
+            TopCuts:        cuts,
+            WinRate:        games > 0 ? wins / games : null,
+            ConversionRate: (decimal)cuts / decks);
     }
 
     public async Task<BudgetDeck> BuildBudgetDeckAsync(

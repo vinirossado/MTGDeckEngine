@@ -28,6 +28,7 @@ export interface CommanderMeta {
   top4DeckCount: number;
   top16DeckCount: number;
   latestTopCutDate: string | null;
+  source: 'None' | 'EdhTop16Aggregate' | 'DerivedFromEntries';
 }
 
 export interface DeckBracket {

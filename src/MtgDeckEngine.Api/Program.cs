@@ -12,7 +12,11 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.Local.json",
     optional: true, reloadOnChange: true);
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    // Serialise enums by name. CommanderMeta.Source is meaningless to a client
+    // as the integer 2, and a renumbering would silently change the contract.
+    .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(
+        new System.Text.Json.Serialization.JsonStringEnumConverter()));
 builder.Services.AddOpenApi();
 
 // CORS — open in Development for the Angular dev server (ng serve, :4200).

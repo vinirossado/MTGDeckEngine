@@ -152,13 +152,15 @@ WHERE {{
 
   # One entry per deck, so summing over rows sums over entries.
   ?entry mtg:hasDeck ?deck ; mtg:hasPlacement ?placement .
+  OPTIONAL {{ ?entry mtg:inTournament ?t . ?t mtg:hasTopCutSize ?cutSize }}
   OPTIONAL {{ ?entry mtg:hasWinsSwiss     ?ws }}
   OPTIONAL {{ ?entry mtg:hasWinsBracket   ?wb }}
   OPTIONAL {{ ?entry mtg:hasLossesSwiss   ?ls }}
   OPTIONAL {{ ?entry mtg:hasLossesBracket ?lb }}
   BIND (COALESCE(?ws, 0) + COALESCE(?wb, 0) AS ?deckWins)
   BIND (COALESCE(?ls, 0) + COALESCE(?lb, 0) AS ?deckLosses)
-  BIND (IF(?placement <= 16, 1, 0) AS ?isTopCut)
+  # The event's own cut, not a flat 16 — 16th of 20 players is not a top cut.
+  BIND (IF(?placement <= COALESCE(?cutSize, 16), 1, 0) AS ?isTopCut)
 
 {deckFilters}}}
 GROUP BY ?cmdKey
