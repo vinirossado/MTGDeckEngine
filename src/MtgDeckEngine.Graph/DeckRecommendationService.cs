@@ -270,11 +270,21 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         => await BuildBudgetDeckAsync(commanderSlug, totalBudgetEur, filter, null, ct)
             .ConfigureAwait(false);
 
-    public async Task<BudgetDeck> BuildBudgetDeckAsync(
+    public Task<BudgetDeck> BuildBudgetDeckAsync(
         string commanderSlug,
         decimal totalBudgetEur,
         RecommendationFilter filter,
         int? maxBracket,
+        CancellationToken ct)
+        => BuildBudgetDeckAsync(commanderSlug, totalBudgetEur, filter, maxBracket, null, null, ct);
+
+    private async Task<BudgetDeck> BuildBudgetDeckAsync(
+        string commanderSlug,
+        decimal totalBudgetEur,
+        RecommendationFilter filter,
+        int? maxBracket,
+        DeckStrategy? strategy,
+        IReadOnlyList<CardRecommendation>? sharedPool,
         CancellationToken ct)
     {
         var constraint = maxBracket is int bracketTarget
@@ -288,7 +298,10 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
             RequireInclusion = false,
             ExcludeBasicLands = false,
         };
-        var raw = await GetRecommendationsAsync(commanderSlug, poolFilter, ct);
+        // Options mode fetches the pool once and passes it to every build:
+        // the query is identical across brackets and strategies, and re-running
+        // it a dozen times is the single most expensive thing this could do.
+        var raw = sharedPool ?? await GetRecommendationsAsync(commanderSlug, poolFilter, ct);
 
         // De-dupe by oracle id and drop any land-less/nameless junk. Nonbasic
         // lands from the graph stay in the pool; basic lands are synthesised.
@@ -310,7 +323,7 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
 
         var score = BuildScoreMap(pool);
         var identity = DeckColorIdentity(pool);
-        var quotas = DeckBuildQuotas.Default;
+        var quotas = strategy?.Quotas ?? DeckBuildQuotas.Default;
 
         var lands    = pool.Where(IsLand).ToList();
         var nonlands = pool.Where(c => !IsLand(c)).ToList();
@@ -356,7 +369,7 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         // ---- Phase C — bring the deck under the bracket cap ----
         var bracket = await EnforceBracketCapAsync(
             commanderSlug, chosen, inDeck, lands, nonlands, score,
-            totalBudgetEur, constraint, maxBracket, ct).ConfigureAwait(false);
+            totalBudgetEur, constraint, quotas, maxBracket, ct).ConfigureAwait(false);
 
         var total = chosen.Sum(c => c.PriceEur ?? 0m);
         var commanderName = commanderNames is null
@@ -364,6 +377,109 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
             : await commanderNames.ResolveAsync(commanderSlug, ct).ConfigureAwait(false);
         return new BudgetDeck(
             commanderSlug, total, chosen.Count, chosen, bracket, commanderName);
+    }
+
+    /// <summary>
+    /// The candidate pool for a commander, fetched once so a batch of builds can
+    /// share it.
+    /// </summary>
+    private Task<IReadOnlyList<CardRecommendation>> FetchPoolAsync(
+        string commanderSlug, RecommendationFilter filter, CancellationToken ct)
+        => GetRecommendationsAsync(commanderSlug, filter with
+        {
+            Limit = 500,
+            RequireInclusion = false,
+            ExcludeBasicLands = false,
+        }, ct);
+
+    public async Task<IReadOnlyList<DeckOption>> BuildDeckOptionsAsync(
+        string commanderSlug,
+        decimal totalBudgetEur,
+        RecommendationFilter filter,
+        IReadOnlyList<int>? brackets,
+        IReadOnlyList<string>? strategyKeys,
+        CancellationToken ct)
+    {
+        var wantedBrackets = brackets is { Count: > 0 }
+            ? brackets.Where(b => b is >= 1 and <= 5).Distinct().OrderBy(b => b).ToList()
+            // 5 is deliberately absent: it is not derivable from a card list, so
+            // asking to build "a Bracket 5 deck" is asking for a Bracket 4 one.
+            : [2, 3, 4];
+
+        var wantedStrategies = strategyKeys is { Count: > 0 }
+            ? DeckStrategy.All
+                .Where(s => strategyKeys.Contains(s.Key, StringComparer.OrdinalIgnoreCase))
+                .ToList()
+            : DeckStrategy.All;
+        if (wantedStrategies.Count == 0) wantedStrategies = [DeckStrategy.Balanced];
+
+        var pool = await FetchPoolAsync(commanderSlug, filter, ct).ConfigureAwait(false);
+
+        // Each cell is an independent build plus at least one bracket call, so
+        // run them together rather than serially — a 3x4 grid would otherwise
+        // take the better part of a minute.
+        var jobs =
+            from bracket in wantedBrackets
+            from strategy in wantedStrategies
+            select BuildOptionAsync(
+                commanderSlug, totalBudgetEur, filter, bracket, strategy, pool, ct);
+
+        var options = await Task.WhenAll(jobs).ConfigureAwait(false);
+
+        return options
+            .Where(o => o is not null)
+            .Select(o => o!)
+            // A cap that never bound produces the same deck as a lower one —
+            // requesting Bracket 4 when the budget only reaches 3 is the common
+            // case. Keep the lowest bracket that yields a given list, since
+            // that is the honest label for it.
+            .GroupBy(o => (o.StrategyKey, Cards: string.Join('|', o.Cards.Select(c => c.OracleId).OrderBy(x => x, StringComparer.Ordinal))))
+            .Select(g => g.OrderBy(o => o.RequestedBracket).First())
+            // Within a bracket the score is comparable; across brackets it is
+            // not, since a higher bracket may use cards a lower one cannot.
+            // Ordered by bracket then score so the trade-off reads directly.
+            .OrderBy(o => o.Bracket)
+            .ThenByDescending(o => o.Score)
+            .ToList();
+    }
+
+    private async Task<DeckOption?> BuildOptionAsync(
+        string commanderSlug,
+        decimal totalBudgetEur,
+        RecommendationFilter filter,
+        int bracket,
+        DeckStrategy strategy,
+        IReadOnlyList<CardRecommendation> pool,
+        CancellationToken ct)
+    {
+        var deck = await BuildBudgetDeckAsync(
+            commanderSlug, totalBudgetEur, filter, bracket, strategy, pool, ct)
+            .ConfigureAwait(false);
+
+        if (deck.Cards.Count == 0) return null;
+
+        // Scored over nonland cards only. The manabase is ~37 of the 99 and
+        // scores near zero for every strategy, so including it drags all the
+        // options toward the same number and hides the difference between them.
+        var score = BuildScoreMap(deck.Cards);
+        var scored = deck.Cards.Where(c => !IsLand(c)).ToList();
+        var mean = scored.Count == 0
+            ? 0
+            : scored.Average(c => score.TryGetValue(c.OracleId, out var v) ? v : 0);
+
+        return new DeckOption(
+            Bracket:            deck.Bracket?.Level ?? bracket,
+            BracketLabel:       deck.Bracket?.Label ?? "",
+            RequestedBracket:   bracket,
+            StrategyKey:        strategy.Key,
+            StrategyName:       strategy.Name,
+            StrategyDescription: strategy.Description,
+            TotalPriceEur:      deck.TotalPriceEur,
+            CardCount:          deck.CardCount,
+            Score:              (decimal)Math.Round(mean, 4),
+            CommanderName:      deck.CommanderName,
+            Cards:              deck.Cards,
+            BracketDetail:      deck.Bracket);
     }
 
     /// <summary>
@@ -389,6 +505,7 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         IReadOnlyDictionary<string, double> score,
         decimal budget,
         BracketConstraint? constraint,
+        DeckBuildQuotas quotas,
         int? maxBracket,
         CancellationToken ct)
     {
@@ -434,7 +551,7 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
                 inDeck.Remove(victim.OracleId);
             }
 
-            RefillAndUpgrade(chosen, inDeck, lands, nonlands, score, budget, constraint, banned);
+            RefillAndUpgrade(chosen, inDeck, lands, nonlands, score, budget, constraint, quotas, banned);
 
             bracket = await _brackets
                 .EvaluateAsync(commanderSlug, chosen.Select(c => c.Name).ToList(), ct)
@@ -458,9 +575,9 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         IReadOnlyDictionary<string, double> score,
         decimal budget,
         BracketConstraint? constraint,
+        DeckBuildQuotas quotas,
         IReadOnlySet<string> banned)
     {
-        var quotas = DeckBuildQuotas.Default;
         var running = chosen.Sum(c => c.PriceEur ?? 0m);
 
         foreach (var card in nonlands

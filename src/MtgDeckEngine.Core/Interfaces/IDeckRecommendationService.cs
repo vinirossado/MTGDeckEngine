@@ -73,6 +73,19 @@ public interface IDeckRecommendationService
         CancellationToken ct);
 
     /// <summary>
+    /// A grid of buildable decks — one per bracket × strategy — for the same
+    /// commander and budget, so the trade-offs are visible side by side rather
+    /// than collapsed into a single answer.
+    /// </summary>
+    Task<IReadOnlyList<DeckOption>> BuildDeckOptionsAsync(
+        string commanderSlug,
+        decimal totalBudgetEur,
+        RecommendationFilter filter,
+        IReadOnlyList<int>? brackets,
+        IReadOnlyList<string>? strategyKeys,
+        CancellationToken ct);
+
+    /// <summary>
     /// The SPARQL a recommendations request would run, without running it.
     /// </summary>
     IReadOnlyList<SparqlExplanation> ExplainRecommendations(

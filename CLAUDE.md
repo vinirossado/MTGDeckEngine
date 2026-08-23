@@ -545,6 +545,32 @@ a different subject. Every commander-facing query keys on the slug node, so a
 commander ingested by name was invisible in the commander list until that node
 existed.
 
+### Deck options are a bracket x strategy grid
+
+`GET /api/commanders/{slug}/build-deck/options?totalBudgetEur=600` returns one
+deck per bracket (2, 3, 4) per strategy (balanced, interactive, creatures,
+ramp) — twelve builds — so the trade-offs sit side by side rather than
+collapsed into a single answer.
+
+Two things make it affordable: the **card pool is fetched once** and shared by
+every build (the query is identical across the grid, and re-running it a dozen
+times would dominate the cost), and the builds run **concurrently**, since each
+needs at least one Commander Spellbook call. A full grid lands in ~7s.
+
+Options that produce the *same* list are collapsed to the lowest bracket that
+yields it — a cap that never binds is not a distinct option, and the lower
+bracket is its honest label.
+
+`Score` is the mean card score over **nonland** cards. The manabase is ~37 of
+the 99 and scores near zero for every strategy, so including it pulls all the
+options toward the same number and hides what the grid exists to show. Scores
+are comparable *within* a bracket; across brackets they are not, since a higher
+bracket may use cards a lower one is forbidden.
+
+The strategy quotas are a heuristic, not something the data told us. Deriving
+them from the category mix of winning tournament decks per commander would be
+better and is not what this does.
+
 ### The bracket is derived here, not taken from Spellbook
 
 Commander Spellbook returns a `bracketTag` on its own severity ladder —
