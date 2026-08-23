@@ -16,4 +16,12 @@ public sealed record DeckBracket(
     bool HasMassLandDenial,
     bool HasExtraTurns,
     IReadOnlyList<string> Reasons,
-    bool IsEstimate = true);
+    bool IsEstimate = true,
+    /// <summary>
+    /// Two-card infinite combos found in the list, each as its participating
+    /// card names. Structured rather than prose because the builder acts on it:
+    /// a combo is a hard Bracket-4 trigger that no card-level flag reveals, so
+    /// the only way to honour a lower bracket cap is to break the pairs.
+    /// Empty from the local evaluator, which cannot see combos at all.
+    /// </summary>
+    IReadOnlyList<IReadOnlyList<string>>? TwoCardCombos = null);
