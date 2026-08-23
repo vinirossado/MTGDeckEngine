@@ -60,6 +60,29 @@ public sealed class CommanderDiscoveryService(IGraphRepository repo) : ICommande
             .ToList();
     }
 
+    public IReadOnlyList<SparqlExplanation> Explain(CommanderDiscoveryFilter filter) =>
+    [
+        new("commander-discovery",
+            """
+            Commanders matching your bracket and budget, aggregated per command
+            zone.
+
+            The inner subquery keys each deck by MIN|MAX of its commander slugs,
+            so a partner pair counts once instead of crediting the pair's record
+            to each half. A third of EDH decks are pairs.
+
+            The bracket cap becomes a cap on hasGameChangerCount, which is
+            precomputed per deck at ingestion — summing card prices and Game
+            Changers per deck at query time would be unusable at this scale.
+
+            Ranking is NOT in this query: the rows come back ordered by total
+            wins, then C# re-ranks them by the Wilson lower bound of the win
+            rate so thin samples sink. Ordering these results by winRate
+            directly will not reproduce the API's list.
+            """,
+            BuildQuery(filter)),
+    ];
+
     /// <summary>
     /// Lower bound of the Wilson score interval — the win rate we can be 95%
     /// confident the commander is at least achieving.

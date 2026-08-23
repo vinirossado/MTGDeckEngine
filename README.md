@@ -85,6 +85,31 @@ curl 'http://localhost:5050/api/commanders/xyris-the-writhing-storm/recommendati
 That's the whole loop. The API runs on **http://localhost:5050** and Fuseki's
 admin UI is at **http://localhost:3030**.
 
+### Seeing the SPARQL behind a request
+
+The deck queries are built from your parameters, so `explain=true` returns the
+exact query rather than a sample — as plain text, ready to run:
+
+```bash
+# print it
+bin/explain '/api/commanders/xyris-the-writhing-storm/build-deck?totalBudgetEur=120&maxBracket=3'
+
+# run every query the endpoint would issue
+bin/explain '/api/commanders/discover?maxBracket=3&maxBudgetEur=200' --run
+
+# drop them into files for editing
+bin/explain '/api/commanders/xyris-the-writhing-storm/meta' --save out/
+
+# or straight from curl
+curl '.../build-deck?totalBudgetEur=120&explain=true' > pool.sparql
+bin/sparql pool.sparql
+```
+
+Supported on `/recommendations`, `/build-deck`, `/meta` and `/discover`. Note
+that ranking and budget packing happen in C# over the returned rows, and the
+Commander Bracket comes from Commander Spellbook over HTTP — neither is visible
+in the SPARQL.
+
 ### Web UI (Angular)
 
 ```bash

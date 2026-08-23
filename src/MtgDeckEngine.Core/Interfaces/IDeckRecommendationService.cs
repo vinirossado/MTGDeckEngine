@@ -71,6 +71,23 @@ public interface IDeckRecommendationService
     Task<CommanderMeta> GetCommanderMetaAsync(
         string commanderSlug,
         CancellationToken ct);
+
+    /// <summary>
+    /// The SPARQL a recommendations request would run, without running it.
+    /// </summary>
+    IReadOnlyList<SparqlExplanation> ExplainRecommendations(
+        string commanderSlug, RecommendationFilter filter);
+
+    /// <summary>
+    /// The SPARQL a deck build would run, without running it — the card pool
+    /// and the basic-land lookup. The Commander Bracket is absent because it
+    /// comes from Commander Spellbook over HTTP, not from the graph.
+    /// </summary>
+    IReadOnlyList<SparqlExplanation> ExplainBuildDeck(
+        string commanderSlug, RecommendationFilter filter);
+
+    /// <summary>The SPARQL behind <see cref="GetCommanderMetaAsync"/>.</summary>
+    IReadOnlyList<SparqlExplanation> ExplainCommanderMeta(string commanderSlug);
 }
 
 public sealed record BudgetDeck(

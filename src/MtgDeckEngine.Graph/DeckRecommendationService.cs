@@ -53,33 +53,7 @@ public sealed class DeckRecommendationService(
         CancellationToken ct)
     {
         var commanderUri = MtgVocab.CommanderUri(commanderSlug);
-        var sparql = $@"
-PREFIX mtg: <{MtgVocab.Namespace}>
-PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-
-SELECT ?entries ?topCuts ?winRate ?conversion ?metaShare
-       (COUNT(DISTINCT ?top4Deck) AS ?top4)
-       (COUNT(DISTINCT ?top16Deck) AS ?top16)
-       (MAX(?date) AS ?latestDate)
-WHERE {{
-  OPTIONAL {{ <{commanderUri}> mtg:hasTournamentEntryCount    ?entries }}
-  OPTIONAL {{ <{commanderUri}> mtg:hasTournamentTopCutCount   ?topCuts }}
-  OPTIONAL {{ <{commanderUri}> mtg:hasTournamentWinRate       ?winRate }}
-  OPTIONAL {{ <{commanderUri}> mtg:hasTournamentConversionRate ?conversion }}
-  OPTIONAL {{ <{commanderUri}> mtg:hasMetaShare               ?metaShare }}
-  OPTIONAL {{
-    ?entry4 mtg:hasPlacement ?p4 ; mtg:hasDeck ?top4Deck .
-    ?top4Deck mtg:hasCommander <{commanderUri}> .
-    FILTER (?p4 <= 4)
-  }}
-  OPTIONAL {{
-    ?entry16 mtg:hasPlacement ?p16 ; mtg:hasDeck ?top16Deck ; mtg:inTournament ?t .
-    ?top16Deck mtg:hasCommander <{commanderUri}> .
-    ?t mtg:hasDate ?date .
-    FILTER (?p16 <= 16)
-  }}
-}}
-GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
+        var sparql = BuildCommanderMetaQuery(commanderUri);
         var rs = await repo.QueryAsync(sparql, ct).ConfigureAwait(false);
         if (rs.Count == 0)
         {
@@ -124,16 +98,93 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
             Source:               source);
     }
 
-    private sealed record DerivedMeta(
-        int DeckCount, int TopCuts, decimal? WinRate, decimal? ConversionRate);
+    public IReadOnlyList<SparqlExplanation> ExplainRecommendations(
+        string commanderSlug, RecommendationFilter filter) =>
+    [
+        new("card-pool",
+            """
+            Cards for this commander, with the filters from your request applied.
 
-    /// <summary>
-    /// Commander metrics computed from the tournament entries in this graph,
-    /// for commanders EDHTop16 never gave us aggregates for.
-    /// </summary>
-    private async Task<DerivedMeta?> GetDerivedMetaAsync(string commanderUri, CancellationToken ct)
+            Prices, images, colours and categories each come back through a
+            grouped subquery rather than an inline OPTIONAL: a card carries
+            several of each, and joining them inline multiplies the rows so
+            LIMIT would keep only a handful of distinct cards.
+            """,
+            BuildQuery(commanderSlug, filter)),
+    ];
+
+    public IReadOnlyList<SparqlExplanation> ExplainBuildDeck(
+        string commanderSlug, RecommendationFilter filter)
     {
-        var sparql = $@"
+        // Mirrors what BuildBudgetDeckAsync actually issues: the pool is fetched
+        // without the inclusion requirement so tournament-only staples surface.
+        var poolFilter = filter with
+        {
+            Limit = 500,
+            RequireInclusion = false,
+            ExcludeBasicLands = false,
+        };
+
+        return
+        [
+            new("deck-pool",
+                """
+                The candidate pool the builder draws from.
+
+                Wider than /recommendations: RequireInclusion is off, so a card
+                that never appears on EDHREC still surfaces if it shows up in
+                this commander's tournament decks. Ranking, budget packing and
+                the bracket cap all happen in C# over these rows, not in SPARQL.
+                """,
+                BuildQuery(commanderSlug, poolFilter)),
+
+            new("basic-lands",
+                """
+                Real oracle ids and art for the basic lands used to complete the
+                manabase. They are looked up rather than invented so the cards
+                render; the builder then prices them at zero regardless.
+                """,
+                BuildBasicsQuery(["Plains", "Island", "Swamp", "Mountain", "Forest", "Wastes"])),
+        ];
+    }
+
+    public IReadOnlyList<SparqlExplanation> ExplainCommanderMeta(string commanderSlug) =>
+    [
+        new("commander-meta",
+            """
+            EDHTop16's commander-level aggregates, plus top-4 and top-16 deck
+            counts derived from ingested tournament entries.
+            """,
+            BuildCommanderMetaQuery(MtgVocab.CommanderUri(commanderSlug))),
+
+        new("commander-meta-derived",
+            """
+            Fallback used when no EDHTop16 aggregate exists for the commander —
+            true for anything sourced only from TopDeck. Computes the same
+            figures from the tournament entries in the graph, counting a top cut
+            against the event's own cut size rather than a flat 16.
+            """,
+            BuildDerivedMetaQuery(MtgVocab.CommanderUri(commanderSlug))),
+    ];
+
+    /// <summary>Oracle id, art and type line for the named basic lands.</summary>
+    private static string BuildBasicsQuery(IReadOnlyList<string> names)
+    {
+        var values = string.Join(" ", names.Select(n => $"\"{n}\""));
+        return $@"
+PREFIX mtg: <{MtgVocab.Namespace}>
+
+SELECT ?name ?oracleId ?typeLine (SAMPLE(?img) AS ?imageUrl) WHERE {{
+  ?card mtg:hasName ?name ; mtg:hasOracleId ?oracleId ; mtg:hasTypeLine ?typeLine .
+  OPTIONAL {{ ?card mtg:hasImageUrl ?img }}
+  VALUES ?name {{ {values} }}
+  FILTER (STRSTARTS(?typeLine, ""Basic Land""))
+}}
+GROUP BY ?name ?oracleId ?typeLine";
+    }
+
+    /// <summary>Commander metrics computed from tournament entries in the graph.</summary>
+    private static string BuildDerivedMetaQuery(string commanderUri) => $@"
 PREFIX mtg: <{MtgVocab.Namespace}>
 
 SELECT (COUNT(DISTINCT ?deck) AS ?deckCount)
@@ -153,6 +204,45 @@ WHERE {{
   # conversion rate for commanders that had simply attended small events.
   BIND (IF(?placement <= COALESCE(?cutSize, 16), 1, 0) AS ?isTopCut)
 }}";
+
+    private static string BuildCommanderMetaQuery(string commanderUri) => $@"
+PREFIX mtg: <{MtgVocab.Namespace}>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?entries ?topCuts ?winRate ?conversion ?metaShare
+       (COUNT(DISTINCT ?top4Deck) AS ?top4)
+       (COUNT(DISTINCT ?top16Deck) AS ?top16)
+       (MAX(?date) AS ?latestDate)
+WHERE {{
+  OPTIONAL {{ <{commanderUri}> mtg:hasTournamentEntryCount    ?entries }}
+  OPTIONAL {{ <{commanderUri}> mtg:hasTournamentTopCutCount   ?topCuts }}
+  OPTIONAL {{ <{commanderUri}> mtg:hasTournamentWinRate       ?winRate }}
+  OPTIONAL {{ <{commanderUri}> mtg:hasTournamentConversionRate ?conversion }}
+  OPTIONAL {{ <{commanderUri}> mtg:hasMetaShare               ?metaShare }}
+  OPTIONAL {{
+    ?entry4 mtg:hasPlacement ?p4 ; mtg:hasDeck ?top4Deck .
+    ?top4Deck mtg:hasCommander <{commanderUri}> .
+    FILTER (?p4 <= 4)
+  }}
+  OPTIONAL {{
+    ?entry16 mtg:hasPlacement ?p16 ; mtg:hasDeck ?top16Deck ; mtg:inTournament ?t .
+    ?top16Deck mtg:hasCommander <{commanderUri}> .
+    ?t mtg:hasDate ?date .
+    FILTER (?p16 <= 16)
+  }}
+}}
+GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
+
+    private sealed record DerivedMeta(
+        int DeckCount, int TopCuts, decimal? WinRate, decimal? ConversionRate);
+
+    /// <summary>
+    /// Commander metrics computed from the tournament entries in this graph,
+    /// for commanders EDHTop16 never gave us aggregates for.
+    /// </summary>
+    private async Task<DerivedMeta?> GetDerivedMetaAsync(string commanderUri, CancellationToken ct)
+    {
+        var sparql = BuildDerivedMetaQuery(commanderUri);
         var rs = await repo.QueryAsync(sparql, ct).ConfigureAwait(false);
         if (rs.Count == 0) return null;
 
@@ -622,17 +712,7 @@ WHERE {{
     private async Task<Dictionary<string, CardRecommendation>> LookupBasicsAsync(
         IReadOnlyList<string> names, CancellationToken ct)
     {
-        var values = string.Join(" ", names.Select(n => $"\"{n}\""));
-        var sparql = $@"
-PREFIX mtg: <{MtgVocab.Namespace}>
-
-SELECT ?name ?oracleId ?typeLine (SAMPLE(?img) AS ?imageUrl) WHERE {{
-  ?card mtg:hasName ?name ; mtg:hasOracleId ?oracleId ; mtg:hasTypeLine ?typeLine .
-  OPTIONAL {{ ?card mtg:hasImageUrl ?img }}
-  VALUES ?name {{ {values} }}
-  FILTER (STRSTARTS(?typeLine, ""Basic Land""))
-}}
-GROUP BY ?name ?oracleId ?typeLine";
+        var sparql = BuildBasicsQuery(names);
 
         var rs = await repo.QueryAsync(sparql, ct).ConfigureAwait(false);
         var map = new Dictionary<string, CardRecommendation>(StringComparer.Ordinal);

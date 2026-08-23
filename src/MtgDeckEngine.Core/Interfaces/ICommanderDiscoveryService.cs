@@ -24,4 +24,7 @@ public interface ICommanderDiscoveryService
     Task<IReadOnlyList<CommanderPick>> FindCommandersAsync(
         CommanderDiscoveryFilter filter,
         CancellationToken cancellationToken = default);
+
+    /// <summary>The SPARQL a discovery request would run, without running it.</summary>
+    IReadOnlyList<SparqlExplanation> Explain(CommanderDiscoveryFilter filter);
 }
