@@ -139,3 +139,19 @@ export interface BuildAndSaveRequest {
   name?: string | null;
   notes?: string | null;
 }
+
+export interface CommanderPick {
+  commanderSlug: string;
+  name: string;
+  deckCount: number;
+  tournamentWins: number;
+  tournamentLosses: number;
+  winRate: number | null;
+  adjustedWinRate: number;
+  topCutCount: number;
+  minDeckPriceEur: number | null;
+  avgDeckPriceEur: number | null;
+  maxGameChangers: number;
+  estimatedBracket: number;
+  imageUrl: string | null;
+}

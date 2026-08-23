@@ -11,6 +11,7 @@ import type {
   FormatSummary,
   IngestSummary,
   RecommendationFilters,
+  CommanderPick,
   SavedDeck,
   SavedDeckSummary,
   BuildAndSaveRequest,
@@ -81,6 +82,17 @@ export class MtgApiService {
       `${this.base}/commanders/${encodeURIComponent(slug)}/build-deck`,
       { params: p },
     );
+  }
+
+  /** Inverse of the builder: which commanders suit this bracket and budget? */
+  discoverCommanders(
+    opts: { maxBracket?: number | null; maxBudgetEur?: number | null; minDeckCount?: number; limit?: number } = {},
+  ): Observable<CommanderPick[]> {
+    let p = new HttpParams();
+    for (const [k, v] of Object.entries(opts)) {
+      if (v != null) p = p.set(k, String(v));
+    }
+    return this.http.get<CommanderPick[]>(`${this.base}/commanders/discover`, { params: p });
   }
 
   // ---- saved decks ----

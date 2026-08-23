@@ -440,6 +440,12 @@ GET  /api/commanders/{slug}/build-deck
      → Complete 99-card deck within budget, capped at the given Commander
        Bracket. Ranked by real tournament win rate (see below).
 
+GET  /api/commanders/discover
+     ?maxBracket=3&maxBudgetEur=200&minDeckCount=3
+     → The inverse of the deck builder: which commanders suit this bracket and
+       budget? Grouped by command zone (partner pairs count once), ranked by the
+       Wilson lower bound of tournament win rate so thin samples sink.
+
 GET    /api/decks                → saved decks, newest first (?commander=slug)
 GET    /api/decks/{id}           → one saved deck with its full card list
 GET    /api/decks/{id}/export    → text/plain "N Card Name" list (Moxfield/Archidekt)
@@ -497,6 +503,23 @@ g.Assert(card, hasName,  g.CreateLiteralNode(name));
 g.Assert(card, g.CreateUriNode("mtg:hasPriceEur"),
                g.CreateLiteralNode(price.ToString(), new Uri(XmlSpecsHelper.XmlSchemaDataTypeDecimal)));
 ```
+
+### Tournament decks carry their commander (and their rollups)
+
+TopDeck.gg wraps EDH lists in `~~Commanders~~` / `~~Mainboard~~` sections. The
+parser used to skip the header and treat the commander as an ordinary card, so
+27k tournament decks had no `mtg:hasCommander` — only the single EDHREC-ingested
+commander did. Fixing that took the graph from 1 commander with tournament decks
+to **733**, which is also what makes the budget builder usable beyond Xyris.
+
+Partner and background pairs put two cards in the command zone, so `hasCommander`
+is asserted per card and consumers must group by the *pair*, not the card — a
+third of EDH decks are pairs, and crediting the pair's record to each half
+separately ranks partner halves above real single commanders.
+
+Ingestion also precomputes `hasTotalPriceEur`, `hasGameChangerCount` and
+`hasPricedCardCount` per deck. Deriving those at query time would mean summing
+~100 card prices per deck across tens of thousands of decks on every request.
 
 ### Canonical xsd:decimal is mandatory (cost us a silent data-corruption bug)
 

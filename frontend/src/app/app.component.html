@@ -19,6 +19,10 @@
                 [class.text-bg]="mode() === 'format'"
                 [class.text-muted]="mode() !== 'format'"
                 class="px-3 py-1.5 transition-colors">Format</button>
+        <button (click)="setMode('discover')"
+                [class.bg-accent2]="mode() === 'discover'"
+                [class.text-bg]="mode() === 'discover'"
+                class="px-3 py-1.5 transition-colors">Discover</button>
       </div>
 
       <!-- On-demand commander ingest (commander mode only) -->
@@ -153,6 +157,45 @@
           win rate of the decks that played each card (shrunk toward the pool
           average so small samples don't dominate), with EDHREC inclusion filling
           in where match records are thin. Manabase completed with basic lands.
+        </p>
+      </section>
+
+      <!-- Discover: which commander for this bracket + budget? -->
+      <section *ngIf="mode() === 'discover'"
+               class="bg-panel border border-border2 rounded-xl p-4">
+        <h2 class="text-xs uppercase tracking-wider text-muted mb-3">Find a commander</h2>
+
+        <label class="text-[11px] text-muted">Max bracket</label>
+        <select [ngModel]="discoverBracket()" (ngModelChange)="setDiscoverBracket($event)"
+                class="w-full mt-1 bg-bg border border-border2 rounded px-3 py-2 text-sm
+                       focus:outline-none focus:border-accent">
+          <option *ngFor="let o of bracketOptions" [ngValue]="o.value">{{ o.label }}</option>
+        </select>
+
+        <label class="text-[11px] text-muted block mt-3">Max budget (€)</label>
+        <input type="number" min="1" step="25"
+               [ngModel]="discoverBudget()" (ngModelChange)="discoverBudget.set(+$event)"
+               (keydown.enter)="runDiscover()"
+               class="w-full mt-1 bg-bg border border-border2 rounded px-3 py-2 text-sm
+                      focus:outline-none focus:border-accent" />
+
+        <label class="text-[11px] text-muted block mt-3">Min tournament decks</label>
+        <input type="number" min="1" step="1"
+               [ngModel]="minDeckCount()" (ngModelChange)="minDeckCount.set(+$event)"
+               (keydown.enter)="runDiscover()"
+               class="w-full mt-1 bg-bg border border-border2 rounded px-3 py-2 text-sm
+                      focus:outline-none focus:border-accent" />
+
+        <button (click)="runDiscover()" [disabled]="loading()"
+                class="w-full mt-3 bg-accent2/20 border border-accent2/40 text-accent2 rounded
+                       px-3 py-2 text-sm hover:bg-accent2/30 disabled:opacity-50">
+          Find commanders
+        </button>
+
+        <p class="mt-2 text-[11px] text-muted leading-snug">
+          The inverse of the deck builder. Budget matches the cheapest tournament
+          deck actually recorded for that commander. Ranked by the win rate we can
+          be 95% confident of — a lone 3-0 scores near the bottom, not the top.
         </p>
       </section>
 
@@ -344,8 +387,53 @@
                  focus:border-accent"></textarea>
       </div>
 
+      <!-- Discover results -->
+      <div *ngIf="mode() === 'discover' && picks().length" class="space-y-2">
+        <div *ngFor="let p of picks()"
+             class="bg-panel border border-border2 rounded-xl p-3 flex items-center gap-3
+                    hover:border-accent/50">
+          <img *ngIf="p.imageUrl" [src]="p.imageUrl" [alt]="p.name"
+               class="w-12 h-12 rounded object-cover shrink-0" loading="lazy" />
+          <div class="min-w-0 flex-1">
+            <div class="text-sm truncate">{{ p.name }}</div>
+            <div class="text-[11px] text-muted">
+              {{ p.deckCount }} tournament decks ·
+              {{ p.tournamentWins }}-{{ p.tournamentLosses }} ·
+              {{ p.topCutCount }} top cuts
+            </div>
+          </div>
+          <div class="text-right shrink-0">
+            <div class="text-sm text-accent2">{{ p.adjustedWinRate | percent:'1.0-1' }}</div>
+            <div class="text-[10px] text-muted">
+              conf. floor<span *ngIf="p.winRate"> · raw {{ p.winRate | percent:'1.0-0' }}</span>
+            </div>
+          </div>
+          <div class="text-right shrink-0 w-24">
+            <div class="text-sm">€{{ p.minDeckPriceEur | number:'1.0-0' }}</div>
+            <div class="text-[10px] text-muted">cheapest build</div>
+          </div>
+          <div class="px-2 py-1 rounded border text-xs shrink-0"
+               [class.bg-ok]="p.estimatedBracket <= 2" [class.text-bg]="p.estimatedBracket <= 2"
+               [class.bg-warn]="p.estimatedBracket === 3"
+               [class.bg-accent]="p.estimatedBracket >= 4"
+               [title]="p.maxGameChangers + ' Game Changer(s) in its decks — bracket floor, combos not counted'">
+            B{{ p.estimatedBracket }}
+          </div>
+          <button (click)="buildFromPick(p)"
+                  class="shrink-0 bg-accent/20 border border-accent/40 text-accent rounded
+                         px-3 py-1.5 text-xs hover:bg-accent/30">
+            Build
+          </button>
+        </div>
+      </div>
+
+      <p *ngIf="mode() === 'discover' && !picks().length && !loading()"
+         class="text-sm text-muted text-center py-8">
+        Set a bracket and budget, then hit “Find commanders”.
+      </p>
+
       <!-- Card grid -->
-      <mtg-card-grid [cards]="cards()"></mtg-card-grid>
+      <mtg-card-grid *ngIf="mode() !== 'discover'" [cards]="cards()"></mtg-card-grid>
     </section>
   </div>
 </main>
