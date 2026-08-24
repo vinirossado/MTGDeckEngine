@@ -73,6 +73,12 @@ public interface IDeckRecommendationService
         CancellationToken ct);
 
     /// <summary>
+    /// The role mix of this commander's winning tournament decks as a quota
+    /// profile. Null when too few top-cut decks exist to average honestly.
+    /// </summary>
+    Task<DeckStrategy?> DeriveWinningStrategyAsync(string commanderSlug, CancellationToken ct);
+
+    /// <summary>
     /// A grid of buildable decks — one per bracket × strategy — for the same
     /// commander and budget, so the trade-offs are visible side by side rather
     /// than collapsed into a single answer.

@@ -545,6 +545,31 @@ a different subject. Every commander-facing query keys on the slug node, so a
 commander ingested by name was invisible in the commander list until that node
 existed.
 
+### EDHREC categories are card types, not roles
+
+EDHREC's commander page sections are `Instants`, `Sorceries`, `Creatures`,
+`Mana Artifacts`, `Utility Lands`, `Top Cards`, `High Synergy Cards` — there is
+**no** `Ramp`, `Card Draw` or `Removal`. Any code matching those words against
+`inCategory` matches nothing.
+
+That is exactly what the quota buckets did, so the ramp, draw and removal
+targets in every strategy profile were dead: each nonland non-creature fell
+into `Other`, and the profiles differed only in lands and creatures.
+
+Roles now come from `CardRoleClassifier`, over the type line and oracle text
+(present for ~91% of cards). Keyword regexes, not a rules engine — good enough
+to make quotas bind and to describe a deck's shape, not something to quote as
+fact about one card.
+
+Two wordings worth knowing, both found by checking real decks against it:
+
+- **Wheels are draw.** `Wheel of Fortune`, `Windfall` and `Echo of Eons` never
+  say "draw a card"; they say "each player discards their hand, then draws
+  seven". For an archetype built on them — Xyris — calling them `Other`
+  misdescribes the entire deck.
+- **Ramp is not always a tap ability.** `Phyrexian Altar` sacrifices a creature
+  for mana, so the pattern matches `": add"` rather than `"{t}: add"`.
+
 ### Deck options are a bracket x strategy grid
 
 `GET /api/commanders/{slug}/build-deck/options?totalBudgetEur=600` returns one
@@ -567,9 +592,20 @@ options toward the same number and hides what the grid exists to show. Scores
 are comparable *within* a bracket; across brackets they are not, since a higher
 bracket may use cards a lower one is forbidden.
 
-The strategy quotas are a heuristic, not something the data told us. Deriving
-them from the category mix of winning tournament decks per commander would be
-better and is not what this does.
+Strategies come in two kinds. The four generic profiles (balanced, interactive,
+creatures, ramp) are heuristics. `Tournament winners` is derived per commander:
+the average role mix of the decks that made their event's top cut. It only
+appears when at least `MinWinningDecks` such decks exist — averaging two of them
+describes those two decks, not the archetype.
+
+The derived profile is often nothing like the heuristics. For Xyris it is 27
+lands, 20 ramp, 12 creatures against the balanced 37 / 10 / 20 — a low-land,
+fast-mana shape no generic template would suggest.
+
+Note that it usually scores *lowest* in the grid, which is a limitation of the
+score rather than of the profile: `Score` is the mean per-card score, and a
+build reserving 20 slots for cheap mana rocks fills them with individually
+low-scoring cards. It measures card strength, not deck coherence.
 
 ### The bracket is derived here, not taken from Spellbook
 

@@ -25,6 +25,12 @@ public sealed record DeckOption(
     /// is forbidden from touching.
     /// </summary>
     decimal Score,
+    /// <summary>
+    /// The slot budget this option was built to. Exposed because it is the
+    /// substance of a strategy — "winners run 33 lands and 12 ramp" is the
+    /// finding, and without it the strategies are just names.
+    /// </summary>
+    DeckBuildQuotas Quotas,
     string? CommanderName,
     IReadOnlyList<CardRecommendation> Cards,
     DeckBracket? BracketDetail);
