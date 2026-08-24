@@ -156,3 +156,28 @@ export interface CommanderPick {
   estimatedBracket: number;
   imageUrl: string | null;
 }
+
+export interface DeckBuildQuotas {
+  lands: number;
+  ramp: number;
+  draw: number;
+  removal: number;
+  creatures: number;
+  other: number;
+}
+
+export interface DeckOption {
+  bracket: number;
+  bracketLabel: string;
+  requestedBracket: number;
+  strategyKey: string;
+  strategyName: string;
+  strategyDescription: string;
+  totalPriceEur: number;
+  cardCount: number;
+  score: number;
+  quotas: DeckBuildQuotas;
+  commanderName: string | null;
+  cards: CardRecommendation[];
+  bracketDetail: DeckBracket | null;
+}

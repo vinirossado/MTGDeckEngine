@@ -12,6 +12,7 @@ import type {
   IngestSummary,
   RecommendationFilters,
   CommanderPick,
+  DeckOption,
   SavedDeck,
   SavedDeckSummary,
   BuildAndSaveRequest,
@@ -93,6 +94,22 @@ export class MtgApiService {
       if (v != null) p = p.set(k, String(v));
     }
     return this.http.get<CommanderPick[]>(`${this.base}/commanders/discover`, { params: p });
+  }
+
+  /** The bracket x strategy grid: several buildable decks, not one. */
+  buildDeckOptions(
+    slug: string,
+    totalBudgetEur: number,
+    opts: { brackets?: string; strategies?: string; maxCardPriceEur?: number } = {},
+  ): Observable<DeckOption[]> {
+    let p = new HttpParams().set('totalBudgetEur', totalBudgetEur);
+    for (const [k, v] of Object.entries(opts)) {
+      if (v != null && v !== '') p = p.set(k, String(v));
+    }
+    return this.http.get<DeckOption[]>(
+      `${this.base}/commanders/${encodeURIComponent(slug)}/build-deck/options`,
+      { params: p },
+    );
   }
 
   // ---- saved decks ----

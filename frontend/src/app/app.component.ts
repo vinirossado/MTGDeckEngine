@@ -9,6 +9,7 @@ import type {
   CommanderMeta,
   CommanderPick,
   CommanderSummary,
+  DeckOption,
   FormatMeta,
   FormatSummary,
   SavedDeck,
@@ -55,6 +56,10 @@ export class AppComponent {
   readonly savedDecks  = signal<SavedDeckSummary[]>([]);
   readonly showSaved   = signal<boolean>(false);
   readonly showDecklist = signal<boolean>(false);
+
+  // ---- the bracket x strategy grid ----
+  readonly options        = signal<DeckOption[]>([]);
+  readonly selectedOption = signal<DeckOption | null>(null);
   readonly copyLabel    = signal<string>('Copy decklist');
 
   /**
@@ -470,6 +475,64 @@ export class AppComponent {
       .subscribe(() => this.loading.set(false));
   }
 
+  /**
+   * Fetch the grid rather than a single deck. Twelve builds, each needing a
+   * bracket call, so this takes a few seconds — the button says so.
+   */
+  runCompareOptions(): void {
+    if (!this.slug()) return;
+    const total = this.budgetEur();
+    if (!(total > 0)) {
+      this.status.set('Enter a budget greater than EUR 0.');
+      return;
+    }
+    this.loading.set(true);
+    this.cards.set([]);
+    this.deck.set(null);
+    this.options.set([]);
+    this.selectedOption.set(null);
+    this.status.set('Building options… (a few seconds)');
+
+    this.api.buildDeckOptions(this.slug(), total).pipe(
+      tap(rows => {
+        this.options.set(rows);
+        this.status.set(rows.length
+          ? `${rows.length} options across ${new Set(rows.map(r => r.bracket)).size} brackets`
+          : 'No options could be built within that budget.');
+      }),
+      catchError(err => {
+        this.status.set(`Error: ${err?.error ?? err?.message ?? err}`);
+        return of([] as DeckOption[]);
+      }),
+    ).subscribe(() => this.loading.set(false));
+  }
+
+  /** Show one option's actual card list in the grid below. */
+  pickOption(option: DeckOption): void {
+    this.selectedOption.set(option);
+    this.cards.set(option.cards);
+    this.deck.set({
+      commanderSlug: this.slug(),
+      totalPriceEur: option.totalPriceEur,
+      cardCount:     option.cardCount,
+      cards:         option.cards,
+      bracket:       option.bracketDetail,
+      commanderName: option.commanderName,
+    });
+    this.status.set(
+      `${option.strategyName} · Bracket ${option.bracket} · ` +
+      `${option.cardCount} cards · EUR ${option.totalPriceEur.toFixed(2)}`);
+  }
+
+  /** Distinct brackets present, so the template can group without a pipe. */
+  bracketsInOptions(): number[] {
+    return [...new Set(this.options().map(o => o.bracket))].sort((a, b) => a - b);
+  }
+
+  optionsForBracket(bracket: number): DeckOption[] {
+    return this.options().filter(o => o.bracket === bracket);
+  }
+
   runBuildDeck(budget?: number, perCardCap?: number): void {
     if (!this.slug()) return;
     const total = budget ?? this.budgetEur();
@@ -479,6 +542,7 @@ export class AppComponent {
     }
     this.loading.set(true);
     this.cards.set([]);
+    this.options.set([]);
     this.status.set('Building…');
     this.api.buildDeck(this.slug(), total, perCardCap, this.maxBracket())
       .pipe(
