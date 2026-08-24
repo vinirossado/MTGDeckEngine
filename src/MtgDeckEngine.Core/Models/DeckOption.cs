@@ -31,6 +31,9 @@ public sealed record DeckOption(
     /// finding, and without it the strategies are just names.
     /// </summary>
     DeckBuildQuotas Quotas,
+    /// <summary>On-theme cards in this option, and how many existed to pick from.</summary>
+    int? ThemeMatchCount,
+    int? ThemeCandidateCount,
     string? CommanderName,
     IReadOnlyList<CardRecommendation> Cards,
     DeckBracket? BracketDetail);

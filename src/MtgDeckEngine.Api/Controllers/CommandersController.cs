@@ -176,6 +176,7 @@ public sealed class CommandersController(
         [FromQuery] string? brackets = null,
         [FromQuery] string? strategies = null,
         [FromQuery] decimal? maxCardPriceEur = null,
+        [FromQuery] string? themes = null,
         [FromQuery] bool includeCards = true,
         CancellationToken ct = default)
     {
@@ -192,7 +193,7 @@ public sealed class CommandersController(
             Limit:             300);
 
         var options = await recs.BuildDeckOptionsAsync(
-            slug, totalBudgetEur, filter, wanted, Split(strategies), ct);
+            slug, totalBudgetEur, filter, wanted, Split(strategies), Split(themes), ct);
 
         return Ok(includeCards
             ? options

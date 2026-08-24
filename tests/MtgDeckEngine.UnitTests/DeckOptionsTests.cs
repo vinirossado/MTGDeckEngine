@@ -108,7 +108,7 @@ public class DeckOptionsTests
         var svc = await ServiceAsync();
 
         var options = await svc.BuildDeckOptionsAsync(
-            Slug, 100m, Filter(), brackets: [2, 3], strategyKeys: null, default);
+            Slug, 100m, Filter(), brackets: [2, 3], strategyKeys: null, themeKeys: null, default);
 
         Assert.Equal(8, options.Count);                       // 2 brackets x 4 strategies
         Assert.Equal(2, options.Select(o => o.RequestedBracket).Distinct().Count());
@@ -122,7 +122,7 @@ public class DeckOptionsTests
         var svc = await ServiceAsync();
 
         var options = await svc.BuildDeckOptionsAsync(
-            Slug, 100m, Filter(), brackets: [3], strategyKeys: ["interactive", "ramp"], default);
+            Slug, 100m, Filter(), brackets: [3], strategyKeys: ["interactive", "ramp"], themeKeys: null, default);
 
         Assert.All(options, o => Assert.Equal(3, o.RequestedBracket));
         Assert.Equal(["interactive", "ramp"],
@@ -137,7 +137,7 @@ public class DeckOptionsTests
         var svc = await ServiceAsync();
 
         var options = await svc.BuildDeckOptionsAsync(
-            Slug, 100m, Filter(), brackets: [3], strategyKeys: null, default);
+            Slug, 100m, Filter(), brackets: [3], strategyKeys: null, themeKeys: null, default);
 
         var creatures = options.ToDictionary(
             o => o.StrategyKey,
@@ -153,7 +153,7 @@ public class DeckOptionsTests
         var svc = await ServiceAsync();
 
         var options = await svc.BuildDeckOptionsAsync(
-            Slug, 100m, Filter(), brackets: [2, 3], strategyKeys: ["balanced"], default);
+            Slug, 100m, Filter(), brackets: [2, 3], strategyKeys: ["balanced"], themeKeys: null, default);
 
         var b2 = options.Single(o => o.RequestedBracket == 2);
         var b3 = options.Single(o => o.RequestedBracket == 3);
@@ -170,7 +170,7 @@ public class DeckOptionsTests
         var svc = await ServiceAsync();
 
         var options = await svc.BuildDeckOptionsAsync(
-            Slug, 100m, Filter(), brackets: [3, 4], strategyKeys: ["balanced"], default);
+            Slug, 100m, Filter(), brackets: [3, 4], strategyKeys: ["balanced"], themeKeys: null, default);
 
         var signatures = options
             .Select(o => string.Join('|', o.Cards.Select(c => c.OracleId).Order(StringComparer.Ordinal)))
@@ -184,7 +184,7 @@ public class DeckOptionsTests
         var svc = await ServiceAsync();
 
         var options = await svc.BuildDeckOptionsAsync(
-            Slug, 100m, Filter(), brackets: null, strategyKeys: null, default);
+            Slug, 100m, Filter(), brackets: null, strategyKeys: null, themeKeys: null, default);
 
         Assert.NotEmpty(options);
         Assert.All(options, o => Assert.True(o.Bracket <= BracketRules.MaxDerivable));
@@ -200,7 +200,7 @@ public class DeckOptionsTests
         var svc = await ServiceAsync();
 
         var options = await svc.BuildDeckOptionsAsync(
-            Slug, 100m, Filter(), brackets: [3], strategyKeys: null, default);
+            Slug, 100m, Filter(), brackets: [3], strategyKeys: null, themeKeys: null, default);
 
         Assert.All(options, o => Assert.True(o.Score > 0m));
         Assert.True(options.Select(o => o.Score).Distinct().Count() > 1,
@@ -218,7 +218,7 @@ public class DeckOptionsTests
         var svc = new DeckRecommendationService(counting, new CountingBracketService());
 
         await svc.BuildDeckOptionsAsync(
-            Slug, 100m, Filter(), brackets: [2, 3, 4], strategyKeys: null, default);
+            Slug, 100m, Filter(), brackets: [2, 3, 4], strategyKeys: null, themeKeys: null, default);
 
         Assert.Equal(1, counting.PoolQueries);
     }

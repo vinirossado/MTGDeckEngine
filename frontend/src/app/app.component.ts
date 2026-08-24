@@ -34,7 +34,7 @@ type Mode = 'commander' | 'format' | 'discover';
   templateUrl: './app.component.html',
 })
 export class AppComponent {
-  private readonly api = inject(MtgApiService);
+  readonly api = inject(MtgApiService);
 
   readonly commanders = signal<CommanderSummary[]>([]);
   readonly formats    = signal<FormatSummary[]>([]);
@@ -508,7 +508,12 @@ export class AppComponent {
     this.selectedOption.set(null);
     this.status.set('Building options… (a few seconds)');
 
-    this.api.buildDeckOptions(this.slug(), total).pipe(
+    // Themes have to reach the grid too — without this the chips silently did
+    // nothing here while working on the single build, which is worse than not
+    // offering them.
+    this.api.buildDeckOptions(this.slug(), total, {
+      themes: [...this.themes()].join(',') || undefined,
+    }).pipe(
       tap(rows => {
         this.options.set(rows);
         this.status.set(rows.length

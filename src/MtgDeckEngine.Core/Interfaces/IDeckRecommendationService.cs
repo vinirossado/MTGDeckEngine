@@ -102,6 +102,7 @@ public interface IDeckRecommendationService
         RecommendationFilter filter,
         IReadOnlyList<int>? brackets,
         IReadOnlyList<string>? strategyKeys,
+        IReadOnlyList<string>? themeKeys,
         CancellationToken ct);
 
     /// <summary>

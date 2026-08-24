@@ -102,7 +102,7 @@ export class MtgApiService {
   buildDeckOptions(
     slug: string,
     totalBudgetEur: number,
-    opts: { brackets?: string; strategies?: string; maxCardPriceEur?: number } = {},
+    opts: { brackets?: string; strategies?: string; maxCardPriceEur?: number; themes?: string } = {},
   ): Observable<DeckOption[]> {
     let p = new HttpParams().set('totalBudgetEur', totalBudgetEur);
     for (const [k, v] of Object.entries(opts)) {
