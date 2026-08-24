@@ -512,8 +512,10 @@ SELECT ?deck ?card ?typeLine ?oracleText WHERE {{
         RecommendationFilter filter,
         IReadOnlyList<int>? brackets,
         IReadOnlyList<string>? strategyKeys,
+        IReadOnlyList<string>? themeKeys,
         CancellationToken ct)
     {
+        var themes = DeckTheme.Resolve(themeKeys);
         var wantedBrackets = brackets is { Count: > 0 }
             ? brackets.Where(b => b is >= 1 and <= 5).Distinct().OrderBy(b => b).ToList()
             // 5 is deliberately absent: it is not derivable from a card list, so
@@ -544,7 +546,7 @@ SELECT ?deck ?card ?typeLine ?oracleText WHERE {{
             from bracket in wantedBrackets
             from strategy in wantedStrategies
             select BuildOptionAsync(
-                commanderSlug, totalBudgetEur, filter, bracket, strategy, pool, ct);
+                commanderSlug, totalBudgetEur, filter, bracket, strategy, pool, themes, ct);
 
         var options = await Task.WhenAll(jobs).ConfigureAwait(false);
 
@@ -572,10 +574,11 @@ SELECT ?deck ?card ?typeLine ?oracleText WHERE {{
         int bracket,
         DeckStrategy strategy,
         IReadOnlyList<CardRecommendation> pool,
+        IReadOnlyList<DeckTheme>? themes,
         CancellationToken ct)
     {
         var deck = await BuildBudgetDeckAsync(
-            commanderSlug, totalBudgetEur, filter, bracket, strategy, pool, null, ct)
+            commanderSlug, totalBudgetEur, filter, bracket, strategy, pool, themes, ct)
             .ConfigureAwait(false);
 
         if (deck.Cards.Count == 0) return null;
@@ -600,6 +603,8 @@ SELECT ?deck ?card ?typeLine ?oracleText WHERE {{
             TotalPriceEur:      deck.TotalPriceEur,
             CardCount:          deck.CardCount,
             Score:              (decimal)Math.Round(mean, 4),
+            ThemeMatchCount:    deck.ThemeMatchCount,
+            ThemeCandidateCount: deck.ThemeCandidateCount,
             CommanderName:      deck.CommanderName,
             Cards:              deck.Cards,
             BracketDetail:      deck.Bracket);

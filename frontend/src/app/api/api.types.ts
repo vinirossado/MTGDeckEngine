@@ -180,6 +180,8 @@ export interface DeckOption {
   cardCount: number;
   score: number;
   quotas: DeckBuildQuotas;
+  themeMatchCount: number | null;
+  themeCandidateCount: number | null;
   commanderName: string | null;
   cards: CardRecommendation[];
   bracketDetail: DeckBracket | null;

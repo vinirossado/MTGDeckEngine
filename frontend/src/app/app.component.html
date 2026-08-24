@@ -436,11 +436,10 @@
                  focus:border-accent"></textarea>
       </div>
 
-      <!-- Deck options: bracket x strategy -->
-      <div *ngIf="options().length" class="space-y-3">
-        <div *ngFor="let b of bracketsInOptions()"
-             class="bg-panel border border-border2 rounded-xl p-4">
-          <div class="flex items-baseline gap-2 mb-3">
+      <!-- Deck options: one card per buildable deck, not a spreadsheet row -->
+      <div *ngIf="options().length" class="space-y-4">
+        <div *ngFor="let b of bracketsInOptions()">
+          <div class="flex items-baseline gap-2 mb-2">
             <span class="px-2 py-0.5 rounded border text-xs font-semibold"
                   [class.bg-ok]="b <= 2" [class.text-bg]="b <= 2"
                   [class.bg-warn]="b === 3"
@@ -448,62 +447,56 @@
             <span class="text-xs text-muted">{{ optionsForBracket(b)[0].bracketLabel }}</span>
           </div>
 
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="text-[11px] uppercase tracking-wider text-muted text-left">
-                <th class="pb-2 font-normal">Strategy</th>
-                <th class="pb-2 font-normal text-right">Lands</th>
-                <th class="pb-2 font-normal text-right">Ramp</th>
-                <th class="pb-2 font-normal text-right">Draw</th>
-                <th class="pb-2 font-normal text-right">Removal</th>
-                <th class="pb-2 font-normal text-right">Creatures</th>
-                <th class="pb-2 font-normal text-right">Price</th>
-                <th class="pb-2 font-normal text-right">Score</th>
-                <th class="pb-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr *ngFor="let o of optionsForBracket(b)"
-                  class="border-t border-border2/50"
-                  [class.bg-accent2]="selectedOption()?.strategyKey === o.strategyKey
-                                   && selectedOption()?.bracket === o.bracket"
-                  [class.bg-opacity-10]="true">
-                <td class="py-2 pr-3">
-                  <div>{{ o.strategyName }}</div>
-                  <!-- The derived profile is the one worth reading; say where
-                       it came from rather than letting it look like the rest. -->
-                  <div *ngIf="o.strategyKey === 'winners'"
-                       class="text-[10px] text-ok">from real winning decks</div>
-                </td>
-                <td class="py-2 text-right tabular-nums">{{ o.quotas.lands }}</td>
-                <td class="py-2 text-right tabular-nums">{{ o.quotas.ramp }}</td>
-                <td class="py-2 text-right tabular-nums">{{ o.quotas.draw }}</td>
-                <td class="py-2 text-right tabular-nums">{{ o.quotas.removal }}</td>
-                <td class="py-2 text-right tabular-nums">{{ o.quotas.creatures }}</td>
-                <td class="py-2 text-right tabular-nums">€{{ o.totalPriceEur | number:'1.0-0' }}</td>
-                <td class="py-2 text-right tabular-nums text-accent2">{{ o.score | number:'1.3-3' }}</td>
-                <td class="py-2 pl-3 text-right">
-                  <button (click)="pickOption(o)"
-                          class="bg-accent/20 border border-accent/40 text-accent rounded
-                                 px-3 py-1 text-xs hover:bg-accent/30">
-                    View
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div *ngFor="let o of optionsForBracket(b)"
+                 (click)="pickOption(o)"
+                 class="bg-panel border rounded-xl p-3 cursor-pointer transition-colors"
+                 [class.border-accent]="selectedOption() === o"
+                 [class.border-border2]="selectedOption() !== o">
 
-          <p *ngIf="optionsForBracket(b)[0] as first" class="mt-2 text-[11px] text-muted">
-            {{ first.strategyDescription }}
-          </p>
+              <div class="flex items-baseline justify-between gap-2">
+                <div>
+                  <div class="text-sm">{{ o.strategyName }}</div>
+                  <div *ngIf="o.strategyKey === 'winners'" class="text-[10px] text-ok">
+                    from real winning decks
+                  </div>
+                </div>
+                <div class="text-right shrink-0">
+                  <div class="text-sm text-accent2">{{ o.score | number:'1.3-3' }}</div>
+                  <div class="text-[10px] text-muted">€{{ o.totalPriceEur | number:'1.0-0' }}</div>
+                </div>
+              </div>
+
+              <!-- A glimpse of the actual deck. A row of numbers reads as a
+                   spreadsheet; the cards make it read as a deck you could play. -->
+              <div class="flex gap-1 mt-2 overflow-hidden">
+                <img *ngFor="let c of o.cards.slice(0, 8)"
+                     [src]="c.imageUrl || api.scryfallImageUrl(c.oracleId)"
+                     [alt]="c.name" [title]="c.name" loading="lazy"
+                     class="w-[52px] h-[72px] rounded object-cover shrink-0" />
+              </div>
+
+              <div class="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[11px] text-muted">
+                <span>{{ o.quotas.lands }} lands</span>
+                <span>{{ o.quotas.ramp }} ramp</span>
+                <span>{{ o.quotas.draw }} draw</span>
+                <span>{{ o.quotas.removal }} removal</span>
+                <span>{{ o.quotas.creatures }} creatures</span>
+                <span *ngIf="o.themeMatchCount != null" class="text-accent">
+                  {{ o.themeMatchCount }}/{{ o.themeCandidateCount }} on-theme
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <p class="text-[11px] text-muted px-1 leading-snug">
-          Score is the mean card score over nonland cards. It compares strategies
-          <em>within</em> a bracket — across brackets it does not, since a higher
-          bracket may use cards a lower one is forbidden. It also measures card
-          strength rather than deck coherence, which is why a ramp-heavy profile
-          full of cheap mana rocks can score below a flashier one.
+          Click a deck to load its 99 cards below, where you can export or save
+          it. Score is the mean card score over nonland cards: it compares
+          strategies <em>within</em> a bracket but not across them, since a
+          higher bracket may use cards a lower one is forbidden. It also measures
+          card strength rather than deck coherence, which is why a ramp-heavy
+          profile full of cheap mana rocks can sit below a flashier one.
         </p>
       </div>
 
