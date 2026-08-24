@@ -10,7 +10,7 @@ PREFIX mtg:  <http://example.org/mtg#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
 
-SELECT ?oracleId ?name ?categoryLabel ?inclusion ?synergy ?priceEur ?topCutCount ?wins ?losses ?imageUrl ?typeLine ?colorIdentity ?gameChanger WHERE {
+SELECT ?oracleId ?name ?categoryLabel ?inclusion ?synergy ?priceEur ?topCutCount ?wins ?losses ?imageUrl ?typeLine ?colorIdentity ?gameChanger ?oracleText WHERE {
   OPTIONAL {
   GRAPH <http://example.org/mtg#context/xyris-the-writhing-storm> {
     ?card mtg:hasInclusionPct ?inclusion .
@@ -25,6 +25,7 @@ SELECT ?oracleId ?name ?categoryLabel ?inclusion ?synergy ?priceEur ?topCutCount
   BIND (COALESCE(?eurMin, ?usdMin) AS ?priceEur)
   OPTIONAL { SELECT ?card (SAMPLE(?img) AS ?imageUrl) WHERE { ?card mtg:hasImageUrl ?img } GROUP BY ?card }
   OPTIONAL { ?card mtg:isGameChanger ?gameChanger }
+  OPTIONAL { ?card mtg:hasOracleText ?oracleText }
   OPTIONAL {
     SELECT ?card (GROUP_CONCAT(DISTINCT ?ci; SEPARATOR=",") AS ?colorIdentity) WHERE {
       ?card mtg:hasColorIdentity ?ciNode .

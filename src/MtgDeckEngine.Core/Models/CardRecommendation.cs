@@ -18,7 +18,11 @@ public sealed record CardRecommendation(
     int? TournamentLosses = null,
     // WotC Game Changer, straight from Scryfall's per-card flag. Drives the
     // bracket cap, which is why it comes from data rather than a curated list.
-    bool IsGameChanger = false)
+    bool IsGameChanger = false,
+    // Needed to classify what a card does. EDHREC's categories are card-type
+    // sections, not functional roles, so the text is the only signal for
+    // telling ramp and removal apart from everything else.
+    string? OracleText = null)
 {
     public int? TournamentGames
         => TournamentWins is null && TournamentLosses is null

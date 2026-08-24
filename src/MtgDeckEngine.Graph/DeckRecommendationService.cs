@@ -41,6 +41,7 @@ public sealed class DeckRecommendationService(
                 TournamentWins:      wins.HasValue ? (int)wins.Value : null,
                 TournamentLosses:    losses.HasValue ? (int)losses.Value : null,
                 IsGameChanger:       Bool(row, "gameChanger"),
+                OracleText:          Str(row, "oracleText"),
                 ImageUrl:            Str(row, "imageUrl"),
                 TypeLine:            Str(row, "typeLine"),
                 ColorIdentity:       Str(row, "colorIdentity")));
@@ -392,6 +393,99 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
             ExcludeBasicLands = false,
         }, ct);
 
+    /// <summary>
+    /// The role mix of this commander's winning tournament decks, as a quota
+    /// profile — what people who actually won with it chose to play.
+    ///
+    /// Returns null when there is not enough evidence. Averaging two decks
+    /// produces a profile that describes those two decks and nothing else, so
+    /// below <see cref="MinWinningDecks"/> the caller should fall back to the
+    /// generic heuristics rather than dress up noise as data.
+    /// </summary>
+    public async Task<DeckStrategy?> DeriveWinningStrategyAsync(
+        string commanderSlug, CancellationToken ct)
+    {
+        var commanderUri = MtgVocab.CommanderUri(commanderSlug);
+        var sparql = $@"
+PREFIX mtg: <{MtgVocab.Namespace}>
+
+SELECT ?deck ?card ?typeLine ?oracleText WHERE {{
+  ?deck  mtg:hasCommander <{commanderUri}> ; mtg:containsCard ?card .
+  ?card  mtg:hasTypeLine ?typeLine .
+  OPTIONAL {{ ?card mtg:hasOracleText ?oracleText }}
+
+  # Only decks that made their event's own cut — not a flat 16, which in a
+  # 20-player tournament is most of the field.
+  ?entry mtg:hasDeck ?deck ; mtg:hasPlacement ?placement .
+  OPTIONAL {{ ?entry mtg:inTournament ?t . ?t mtg:hasTopCutSize ?cutSize }}
+  FILTER (?placement <= COALESCE(?cutSize, 16))
+}}";
+
+        var rs = await repo.QueryAsync(sparql, ct).ConfigureAwait(false);
+
+        var perDeck = new Dictionary<string, Dictionary<CardRole, int>>(StringComparer.Ordinal);
+        foreach (var row in rs)
+        {
+            if (row["deck"] is not IUriNode deck) continue;
+            var role = CardRoleClassifier.Classify(Str(row, "typeLine"), Str(row, "oracleText"));
+            var counts = perDeck.TryGetValue(deck.Uri.AbsoluteUri, out var c)
+                ? c
+                : perDeck[deck.Uri.AbsoluteUri] = new Dictionary<CardRole, int>();
+            counts[role] = counts.GetValueOrDefault(role) + 1;
+        }
+
+        if (perDeck.Count < MinWinningDecks) return null;
+
+        double Mean(CardRole r) => perDeck.Values.Average(d => (double)d.GetValueOrDefault(r));
+
+        var quotas = NormaliseToNinetyNine(
+            lands:     Mean(CardRole.Land),
+            ramp:      Mean(CardRole.Ramp),
+            draw:      Mean(CardRole.Draw),
+            removal:   Mean(CardRole.Removal),
+            creatures: Mean(CardRole.Creature),
+            other:     Mean(CardRole.Other));
+
+        return new DeckStrategy(
+            "winners",
+            "Tournament winners",
+            $"The average role mix of {perDeck.Count} decks that made their event's top cut "
+          + "with this commander, rather than a generic template.",
+            quotas);
+    }
+
+    /// <summary>
+    /// Below this many top-cut decks a derived profile describes those decks
+    /// rather than the archetype, so the caller falls back to the heuristics.
+    /// </summary>
+    public const int MinWinningDecks = 5;
+
+    /// <summary>
+    /// Round a set of observed means into integer quotas summing to exactly 99.
+    /// Largest-remainder, so the rounding error lands on whichever bucket was
+    /// closest to rounding up anyway rather than always on the last one.
+    /// </summary>
+    private static DeckBuildQuotas NormaliseToNinetyNine(
+        double lands, double ramp, double draw, double removal, double creatures, double other)
+    {
+        double[] raw = [lands, ramp, draw, removal, creatures, other];
+        var total = raw.Sum();
+        if (total <= 0) return DeckBuildQuotas.Default;
+
+        var scaled = raw.Select(v => v / total * 99).ToArray();
+        var floors = scaled.Select(v => (int)Math.Floor(v)).ToArray();
+        var shortfall = 99 - floors.Sum();
+
+        foreach (var i in Enumerable.Range(0, scaled.Length)
+                     .OrderByDescending(i => scaled[i] - floors[i])
+                     .Take(Math.Max(0, shortfall)))
+            floors[i]++;
+
+        return new DeckBuildQuotas(
+            Lands: floors[0], Ramp: floors[1], Draw: floors[2],
+            Removal: floors[3], Creatures: floors[4], Other: floors[5]);
+    }
+
     public async Task<IReadOnlyList<DeckOption>> BuildDeckOptionsAsync(
         string commanderSlug,
         decimal totalBudgetEur,
@@ -406,12 +500,20 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
             // asking to build "a Bracket 5 deck" is asking for a Bracket 4 one.
             : [2, 3, 4];
 
-        var wantedStrategies = strategyKeys is { Count: > 0 }
+        // What people actually won with, ahead of the generic templates. Null
+        // when too few top-cut decks exist to average honestly, in which case
+        // the heuristics are all there is.
+        var derived = await DeriveWinningStrategyAsync(commanderSlug, ct).ConfigureAwait(false);
+        var available = derived is null
             ? DeckStrategy.All
+            : new[] { derived }.Concat(DeckStrategy.All).ToList();
+
+        var wantedStrategies = strategyKeys is { Count: > 0 }
+            ? available
                 .Where(s => strategyKeys.Contains(s.Key, StringComparer.OrdinalIgnoreCase))
                 .ToList()
-            : DeckStrategy.All;
-        if (wantedStrategies.Count == 0) wantedStrategies = [DeckStrategy.Balanced];
+            : available;
+        if (wantedStrategies.Count == 0) wantedStrategies = [derived ?? DeckStrategy.Balanced];
 
         var pool = await FetchPoolAsync(commanderSlug, filter, ct).ConfigureAwait(false);
 
@@ -474,6 +576,7 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
             StrategyKey:        strategy.Key,
             StrategyName:       strategy.Name,
             StrategyDescription: strategy.Description,
+            Quotas:             strategy.Quotas,
             TotalPriceEur:      deck.TotalPriceEur,
             CardCount:          deck.CardCount,
             Score:              (decimal)Math.Round(mean, 4),
@@ -871,16 +974,25 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
     // labels ("Top Cards" / "High Synergy") collapse to "Other".
     private enum DeckBucket { Lands, Ramp, Draw, Removal, Creatures, Other }
 
+    /// <summary>
+    /// Maps a card to the quota bucket it fills.
+    ///
+    /// This used to match "ramp", "card draw" and "removal" against the EDHREC
+    /// category. Those labels do not exist — EDHREC's commander sections are
+    /// card types (Instants, Sorceries, Mana Artifacts) — so the three buckets
+    /// were always empty and every nonland non-creature became Other. The
+    /// ramp/draw/removal figures in every strategy profile did nothing.
+    /// </summary>
     private static DeckBucket NonlandBucket(CardRecommendation card)
-    {
-        var c = (card.Category ?? "").ToLowerInvariant();
-        if (c.Contains("ramp")) return DeckBucket.Ramp;
-        if (c.Contains("card draw") || c == "draw") return DeckBucket.Draw;
-        if (c.Contains("removal") || c.Contains("interaction")) return DeckBucket.Removal;
-        var t = (card.TypeLine ?? "").ToLowerInvariant();
-        if (c.Contains("creature") || t.Contains("creature")) return DeckBucket.Creatures;
-        return DeckBucket.Other;
-    }
+        => CardRoleClassifier.Classify(card.TypeLine, card.OracleText) switch
+        {
+            CardRole.Ramp     => DeckBucket.Ramp,
+            CardRole.Draw     => DeckBucket.Draw,
+            CardRole.Removal  => DeckBucket.Removal,
+            CardRole.Creature => DeckBucket.Creatures,
+            CardRole.Land     => DeckBucket.Lands,
+            _                 => DeckBucket.Other,
+        };
 
     private static int QuotaFor(DeckBuildQuotas q, DeckBucket b) => b switch
     {
@@ -915,7 +1027,7 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         sb.AppendLine("PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>");
         sb.AppendLine("PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>");
         sb.AppendLine();
-        sb.AppendLine("SELECT ?oracleId ?name ?categoryLabel ?inclusion ?synergy ?priceEur ?topCutCount ?wins ?losses ?imageUrl ?typeLine ?colorIdentity ?gameChanger WHERE {");
+        sb.AppendLine("SELECT ?oracleId ?name ?categoryLabel ?inclusion ?synergy ?priceEur ?topCutCount ?wins ?losses ?imageUrl ?typeLine ?colorIdentity ?gameChanger ?oracleText WHERE {");
 
         // EDHREC context graph — required for Edhrec/All sources, optional when
         // inclusion is not required (Tournament source or the budget builder).
@@ -941,6 +1053,7 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         sb.AppendLine("  BIND (COALESCE(?eurMin, ?usdMin) AS ?priceEur)");
         sb.AppendLine("  OPTIONAL { SELECT ?card (SAMPLE(?img) AS ?imageUrl) WHERE { ?card mtg:hasImageUrl ?img } GROUP BY ?card }");
         sb.AppendLine("  OPTIONAL { ?card mtg:isGameChanger ?gameChanger }");
+        sb.AppendLine("  OPTIONAL { ?card mtg:hasOracleText ?oracleText }");
 
         // Colour identity as a comma-joined WUBRG string (e.g. "R,G,U"). Done as
         // a grouped subquery so multiple hasColorIdentity triples collapse into
