@@ -562,10 +562,18 @@ tokens, storm, stax, blink, sacrifice, counters, graveyard.
 It is a **preference on ranking, not a filter**. A theme the pool cannot serve
 yields a normal deck rather than a broken one.
 
+A theme has to move quota slots, not just reorder cards. The upgrade pass only
+swaps a card for another **in the same role**, and the quotas fix how many slots
+each role gets — so a scoring bonus alone decides which card fills a draw slot
+but never creates another one. Asking for wheels against a 10-draw profile got
+exactly ten wheels whether you asked or not. `ApplyThemeToQuotas` therefore
+shifts up to 14 slots toward the roles the theme's cards occupy, paid for by
+roles it does not touch, never by lands.
+
 The response reports `themeMatchCount` **and** `themeCandidateCount`, because
 the first is meaningless alone. Kefka at EUR 600 gets 7 of 10 available on-theme
 cards — the theme working against a pool with almost no wheels. Xyris, an actual
-wheel commander, gets 17 of 28. Same feature, and only the pair of numbers tells
+wheel commander, gets 24 of 28. Same feature, and only the pair of numbers tells
 you which situation you are in.
 
 ### EDHREC categories are card types, not roles
