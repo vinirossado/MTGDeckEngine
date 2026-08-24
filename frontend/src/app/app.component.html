@@ -364,35 +364,35 @@
       </div>
 
       <!-- Deck summary banner (commander build-deck) -->
+      <!-- One line of facts, one row of actions. The previous version spread a
+           badge, a bullet list and a right-aligned paragraph across a wrapping
+           flex row, which left a large hole in the middle and repeated what the
+           header already says. -->
       <div *ngIf="deck() as d"
-           class="bg-accent2/10 border border-accent2/40 rounded-xl px-4 py-3 flex items-start gap-4 flex-wrap">
-        <div>
-          <div class="text-xs text-muted uppercase tracking-wider">Budget Deck</div>
-          <div class="text-base text-accent2 font-medium">
-            {{ d.cardCount }} cards · €{{ d.totalPriceEur | number:'1.2-2' }}
-          </div>
-        </div>
+           class="bg-accent2/10 border border-accent2/40 rounded-xl px-4 py-3">
+        <div class="flex items-center gap-3 flex-wrap">
+          <span class="text-base text-accent2 font-medium">{{ d.cardCount }} cards</span>
+          <span class="text-muted">·</span>
+          <span class="text-base text-accent2 font-medium">
+            €{{ d.totalPriceEur | number:'1.2-2' }}
+          </span>
 
-        <!-- Bracket badge -->
-        <div *ngIf="d.bracket as b" class="flex items-start gap-2">
-          <div class="px-2.5 py-1 rounded-lg border text-sm font-semibold"
-               [class.bg-ok]="b.level <= 2" [class.text-bg]="b.level <= 2"
-               [class.bg-warn]="b.level === 3"
-               [class.bg-accent]="b.level >= 4"
-               [class.text-bg]="b.level >= 4"
-               [title]="b.isEstimate
-                          ? 'Local estimate — combos not detected'
-                          : 'Commander Spellbook — combo-aware'">
-            Bracket {{ b.level }} · {{ b.label }}
-            <span *ngIf="b.isEstimate" class="opacity-70">(est.)</span>
-          </div>
-          <ul class="text-[11px] text-muted leading-snug list-disc pl-4 max-w-md">
-            <li *ngFor="let r of b.reasons">{{ r }}</li>
-          </ul>
-        </div>
+          <span *ngIf="d.bracket as b"
+                class="px-2 py-0.5 rounded border text-xs font-semibold"
+                [class.bg-ok]="b.level <= 2" [class.text-bg]="b.level <= 2"
+                [class.bg-warn]="b.level === 3"
+                [class.bg-accent]="b.level >= 4"
+                [title]="b.isEstimate
+                           ? 'Local estimate — combos not detected'
+                           : 'Commander Spellbook — combo-aware'">
+            Bracket {{ b.level }} · {{ b.label }}<span *ngIf="b.isEstimate"> (est.)</span>
+          </span>
 
-        <div class="ml-auto flex flex-col items-end gap-2">
-          <div class="flex items-center gap-2">
+          <span *ngIf="d.themeMatchCount != null" class="text-xs text-accent">
+            {{ d.themeMatchCount }}/{{ d.themeCandidateCount }} on-theme
+          </span>
+
+          <div class="ml-auto flex items-center gap-2">
             <button (click)="copyDecklist()"
                     class="bg-accent2/20 border border-accent2/40 text-accent2 rounded
                            px-3 py-1.5 text-xs hover:bg-accent2/30">
@@ -409,13 +409,15 @@
               {{ showDecklist() ? 'Hide list' : 'Show list' }}
             </button>
           </div>
-          <p class="text-xs text-muted max-w-xs text-right">
-            Complete ~99-card deck within budget, ranked by real tournament win
-            rate where records exist. Bracket from Commander Spellbook
-            (combo-aware) when reachable, otherwise a local name-list estimate.
-          </p>
         </div>
+
+        <!-- Why it graded where it did. One line, not a bullet list. -->
+        <p *ngIf="d.bracket?.reasons?.length"
+           class="mt-2 text-[11px] text-muted leading-snug">
+          {{ d.bracket!.reasons.join(' ') }}
+        </p>
       </div>
+
 
       <!-- Plain-text decklist, ready to paste into Moxfield/Archidekt -->
       <div *ngIf="deck() && showDecklist()"
@@ -469,11 +471,14 @@
 
               <!-- A glimpse of the actual deck. A row of numbers reads as a
                    spreadsheet; the cards make it read as a deck you could play. -->
-              <div class="flex gap-1 mt-2 overflow-hidden">
+              <div class="grid grid-cols-8 gap-1 mt-2">
+                <!-- Eager: these are eight thumbnails already on screen when the
+                     grid renders. Lazy-loading them left ragged holes where the
+                     observer had not fired yet, which read as missing cards. -->
                 <img *ngFor="let c of o.cards.slice(0, 8)"
                      [src]="c.imageUrl || api.scryfallImageUrl(c.oracleId)"
-                     [alt]="c.name" [title]="c.name" loading="lazy"
-                     class="w-[52px] h-[72px] rounded object-cover shrink-0" />
+                     [alt]="c.name" [title]="c.name" loading="eager"
+                     class="w-full aspect-[5/7] rounded object-cover bg-bg" />
               </div>
 
               <div class="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[11px] text-muted">
