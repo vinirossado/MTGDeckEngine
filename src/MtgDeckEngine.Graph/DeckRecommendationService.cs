@@ -335,7 +335,7 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
 
         var score = BuildScoreMap(pool, themes);
         var identity = DeckColorIdentity(pool);
-        var quotas = strategy?.Quotas ?? DeckBuildQuotas.Default;
+        var quotas = ApplyThemeToQuotas(strategy?.Quotas ?? DeckBuildQuotas.Default, pool, themes);
 
         var lands    = pool.Where(IsLand).ToList();
         var nonlands = pool.Where(c => !IsLand(c)).ToList();
@@ -814,6 +814,99 @@ SELECT ?deck ?card ?typeLine ?oracleText WHERE {{
 
     private static double ScoreOf(IReadOnlyDictionary<string, double> score, CardRecommendation c)
         => score.TryGetValue(c.OracleId, out var s) ? s : 0.0;
+
+    /// <summary>
+    /// Slots a theme may move between roles. Enough to change the deck's shape,
+    /// bounded so a themed build is still a functioning Commander deck rather
+    /// than sixty wheels and no way to win.
+    /// </summary>
+    private const int MaxThemeSlotShift = 14;
+
+    /// <summary>
+    /// Shift slots toward the roles a theme's cards actually occupy.
+    ///
+    /// Scoring alone cannot do this. The upgrade pass only swaps a card for
+    /// another in the same role, and the quotas fix how many slots each role
+    /// gets — so a theme bonus decides *which* card fills a draw slot but never
+    /// creates another one. Asking for wheels on a 10-draw profile got exactly
+    /// ten wheels whether you asked or not.
+    ///
+    /// Slots are taken from the roles with no theme presence, never from lands:
+    /// a themed deck that cannot cast its spells is not what was asked for.
+    /// </summary>
+    private static DeckBuildQuotas ApplyThemeToQuotas(
+        DeckBuildQuotas quotas,
+        IReadOnlyList<CardRecommendation> pool,
+        IReadOnlyList<DeckTheme>? themes)
+    {
+        if (themes is not { Count: > 0 }) return quotas;
+
+        var matching = pool.Where(c => themes.Any(t => t.Matches(c.OracleText))).ToList();
+        if (matching.Count == 0) return quotas;
+
+        var byRole = matching
+            .GroupBy(NonlandBucket)
+            .Where(g => g.Key != DeckBucket.Lands)
+            .ToDictionary(g => g.Key, g => g.Count());
+        if (byRole.Count == 0) return quotas;
+
+        var current = new Dictionary<DeckBucket, int>
+        {
+            [DeckBucket.Ramp]      = quotas.Ramp,
+            [DeckBucket.Draw]      = quotas.Draw,
+            [DeckBucket.Removal]   = quotas.Removal,
+            [DeckBucket.Creatures] = quotas.Creatures,
+            [DeckBucket.Other]     = quotas.Other,
+        };
+
+        // Give each theme-bearing role as many extra slots as it has cards to
+        // fill them with, up to the overall shift budget.
+        var shifted = 0;
+        foreach (var (role, available) in byRole.OrderByDescending(kv => kv.Value))
+        {
+            var room = Math.Min(available - current[role], MaxThemeSlotShift - shifted);
+            if (room <= 0) continue;
+            current[role] += room;
+            shifted += room;
+            if (shifted >= MaxThemeSlotShift) break;
+        }
+        if (shifted == 0) return quotas;
+
+        // Pay for it from roles the theme does not touch, largest first, never
+        // dropping one below a floor that keeps the deck playable.
+        const int roleFloor = 4;
+        var donors = current.Keys
+            .Where(r => !byRole.ContainsKey(r))
+            .OrderByDescending(r => current[r])
+            .ToList();
+        var owed = shifted;
+        foreach (var role in donors)
+        {
+            if (owed <= 0) break;
+            var take = Math.Min(owed, Math.Max(0, current[role] - roleFloor));
+            current[role] -= take;
+            owed -= take;
+        }
+        // Anything still owed comes off the boosted roles again, so the total
+        // stays at 99 rather than quietly growing the deck.
+        if (owed > 0)
+            foreach (var role in byRole.Keys.OrderByDescending(r => current[r]))
+            {
+                if (owed <= 0) break;
+                var take = Math.Min(owed, Math.Max(0, current[role] - roleFloor));
+                current[role] -= take;
+                owed -= take;
+            }
+
+        return quotas with
+        {
+            Ramp      = current[DeckBucket.Ramp],
+            Draw      = current[DeckBucket.Draw],
+            Removal   = current[DeckBucket.Removal],
+            Creatures = current[DeckBucket.Creatures],
+            Other     = current[DeckBucket.Other],
+        };
+    }
 
     /// <summary>
     /// Added to a card's score when it matches a requested theme. Tuned so a

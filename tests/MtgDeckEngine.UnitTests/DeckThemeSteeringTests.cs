@@ -30,10 +30,10 @@ public class DeckThemeSteeringTests
         var entries = new List<EdhrecCardEntry>();
         var nameToId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        void Add(string oid, string name, string type, string text, decimal inclusion)
+        void Add(string oid, string name, string type, string text, decimal inclusion, decimal price)
         {
             ScryfallToRdfMapper.AssertCard(global, new CardDto(
-                oid, name, Identity, Identity, type, text, 0.20m, null, true));
+                oid, name, Identity, Identity, type, text, price, null, true));
             entries.Add(new EdhrecCardEntry(name, Slug, "creatures", inclusion, 1m, 100, 1000)
             {
                 CategoryLabel = "Top Cards",
@@ -41,12 +41,19 @@ public class DeckThemeSteeringTests
             nameToId[name] = oid;
         }
 
-        for (var i = 0; i < 90; i++)
-            Add($"fill-{i:D2}", $"Filler {i:D2}", "Enchantment", PlainText, inclusion: 90m);
-        for (var i = 0; i < 15; i++)
-            Add($"wheel-{i:D2}", $"Wheel {i:D2}", "Sorcery", WheelText, inclusion: 2m);
+        // Far more nonlands than the 62 slots can hold, so the build has to
+        // choose. With only a handful of wheels both builds took all of them
+        // and the test proved nothing — it passed locally and failed in CI on
+        // tie ordering alone.
+        // Wheels are both the lowest-scoring and the most expensive cards here,
+        // so nothing but an explicit request should pull them in. Fillers are
+        // cheap and high-inclusion — exactly what an unasked build wants.
+        for (var i = 0; i < 120; i++)
+            Add($"fill-{i:D3}", $"Filler {i:D3}", "Enchantment", PlainText, inclusion: 90m, price: 0.10m);
+        for (var i = 0; i < 40; i++)
+            Add($"wheel-{i:D2}", $"Wheel {i:D2}", "Sorcery", WheelText, inclusion: 2m, price: 0.50m);
         for (var i = 0; i < 45; i++)
-            Add($"land-{i:D2}", $"Land {i:D2}", "Land", "", inclusion: 50m);
+            Add($"land-{i:D2}", $"Land {i:D2}", "Land", "", inclusion: 50m, price: 0.10m);
 
         await repo.WriteAsync(global, null, default);
         var ctx = new RdfGraph();
@@ -68,8 +75,12 @@ public class DeckThemeSteeringTests
         var plain  = await svc.BuildBudgetDeckAsync(Slug, 100m, Filter(), null, default);
         var themed = await svc.BuildBudgetDeckAsync(Slug, 100m, Filter(), null, ["wheel"], default);
 
-        Assert.True(WheelsIn(themed) > WheelsIn(plain),
-            $"themed had {WheelsIn(themed)} wheels, plain had {WheelsIn(plain)}");
+        // Not merely "more" — decisively more. The wheels are the lowest-scoring
+        // cards in the pool, so a build that fills up on them is doing it
+        // because it was asked to.
+        Assert.True(WheelsIn(themed) >= WheelsIn(plain) + 10,
+            $"themed had {WheelsIn(themed)} wheels, plain had {WheelsIn(plain)} "
+          + "— the theme did not steer the build");
     }
 
     [Fact]
@@ -95,7 +106,7 @@ public class DeckThemeSteeringTests
 
         Assert.NotNull(themed.ThemeMatchCount);
         Assert.NotNull(themed.ThemeCandidateCount);
-        Assert.Equal(15, themed.ThemeCandidateCount);
+        Assert.Equal(40, themed.ThemeCandidateCount);
         Assert.InRange(themed.ThemeMatchCount!.Value, 1, themed.ThemeCandidateCount!.Value);
         Assert.Equal(["wheel"], themed.Themes!);
     }
