@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using MtgDeckEngine.Core.Interfaces;
+using MtgDeckEngine.Core.Brackets;
 using MtgDeckEngine.Core.Models;
 
 namespace MtgDeckEngine.Api.Controllers;
@@ -108,6 +109,12 @@ public sealed class CommandersController(
     /// Commander Bracket. <paramref name="maxCardPriceEur"/> optionally caps the
     /// price of any single card. <paramref name="maxBracket"/> (1–5) constrains
     /// the build to stay at or below that Commander Bracket.
+    ///
+    /// <paramref name="themes"/> takes comma-separated theme keys — wheel,
+    /// lifedrain, tokens, storm, stax, blink, sacrifice, counters, graveyard —
+    /// and favours cards matching them. A preference on ranking, not a filter:
+    /// a thin theme yields a normal deck rather than a broken one, and the
+    /// response reports how many of the 99 actually matched.
     /// </summary>
     [HttpGet("{slug}/build-deck")]
     public async Task<IActionResult> BuildDeck(
@@ -118,6 +125,7 @@ public sealed class CommandersController(
         [FromQuery] decimal? minSynergy,
         [FromQuery] bool excludeBasicLands = false,
         [FromQuery] string? excludeCategories = null,
+        [FromQuery] string? themes = null,
         [FromQuery] bool explain = false,
         CancellationToken ct = default)
     {
@@ -137,9 +145,15 @@ public sealed class CommandersController(
         if (explain)
             return Sparql(recs.ExplainBuildDeck(slug, filter));
 
-        var deck = await recs.BuildBudgetDeckAsync(slug, totalBudgetEur, filter, maxBracket, ct);
+        var deck = await recs.BuildBudgetDeckAsync(
+            slug, totalBudgetEur, filter, maxBracket, Split(themes), ct);
         return Ok(deck);
     }
+
+    /// <summary>The themes a build can be asked to lean into.</summary>
+    [HttpGet("themes")]
+    public ActionResult<IEnumerable<object>> Themes()
+        => Ok(DeckTheme.All.Select(t => new { t.Key, t.Name, t.Description }));
 
     /// <summary>
     /// A grid of buildable decks for the same commander and budget — one per

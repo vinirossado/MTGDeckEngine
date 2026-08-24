@@ -58,6 +58,21 @@ export class AppComponent {
   readonly showDecklist = signal<boolean>(false);
 
   // ---- the bracket x strategy grid ----
+  readonly themes = signal<Set<string>>(new Set<string>());
+
+  /** Keys must match DeckTheme.All on the server. */
+  readonly themeOptions = [
+    { key: 'wheel',      label: 'Wheels' },
+    { key: 'lifedrain',  label: 'Life drain' },
+    { key: 'tokens',     label: 'Tokens' },
+    { key: 'storm',      label: 'Storm' },
+    { key: 'stax',       label: 'Stax' },
+    { key: 'blink',      label: 'Blink' },
+    { key: 'sacrifice',  label: 'Sacrifice' },
+    { key: 'counters',   label: '+1/+1 counters' },
+    { key: 'graveyard',  label: 'Graveyard' },
+  ];
+
   readonly options        = signal<DeckOption[]>([]);
   readonly selectedOption = signal<DeckOption | null>(null);
   readonly copyLabel    = signal<string>('Copy decklist');
@@ -533,6 +548,16 @@ export class AppComponent {
     return this.options().filter(o => o.bracket === bracket);
   }
 
+  toggleTheme(key: string): void {
+    const next = new Set(this.themes());
+    if (!next.delete(key)) next.add(key);
+    this.themes.set(next);
+  }
+
+  isThemeOn(key: string): boolean {
+    return this.themes().has(key);
+  }
+
   runBuildDeck(budget?: number, perCardCap?: number): void {
     if (!this.slug()) return;
     const total = budget ?? this.budgetEur();
@@ -544,13 +569,18 @@ export class AppComponent {
     this.cards.set([]);
     this.options.set([]);
     this.status.set('Building…');
-    this.api.buildDeck(this.slug(), total, perCardCap, this.maxBracket())
+    this.api.buildDeck(this.slug(), total, perCardCap, this.maxBracket(), [...this.themes()])
       .pipe(
         tap(d => {
           this.deck.set(d);
           this.cards.set(d.cards);
           const bracket = d.bracket ? ` · Bracket ${d.bracket.level} (${d.bracket.label})` : '';
-          this.status.set(`${d.cardCount} cards · €${d.totalPriceEur.toFixed(2)}${bracket}`);
+          // Report matches against what was available — "7 cards" alone cannot
+          // be read, "7 of 10 on-theme cards in the pool" can.
+          const theme = d.themeMatchCount != null
+            ? ` · ${d.themeMatchCount} of ${d.themeCandidateCount} on-theme cards available`
+            : '';
+          this.status.set(`${d.cardCount} cards · €${d.totalPriceEur.toFixed(2)}${bracket}${theme}`);
         }),
         catchError(err => {
           this.status.set(`Error: ${err?.message ?? err}`);

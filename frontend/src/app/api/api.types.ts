@@ -49,6 +49,9 @@ export interface BudgetDeck {
   cards: CardRecommendation[];
   bracket: DeckBracket | null;
   commanderName?: string | null;
+  themes?: string[] | null;
+  themeMatchCount?: number | null;
+  themeCandidateCount?: number | null;
 }
 
 export interface CommanderSummary {

@@ -136,6 +136,25 @@
           99 slots would give you. Takes a few seconds.
         </p>
 
+        <label class="text-[11px] text-muted block mt-3">Themes (optional)</label>
+        <div class="flex flex-wrap gap-1.5 mt-1">
+          <button *ngFor="let t of themeOptions"
+                  (click)="toggleTheme(t.key)"
+                  [class.bg-accent]="isThemeOn(t.key)"
+                  [class.text-bg]="isThemeOn(t.key)"
+                  [class.border-accent]="isThemeOn(t.key)"
+                  class="px-2 py-1 rounded border border-border2 text-[11px]
+                         hover:border-accent/50 transition-colors">
+            {{ t.label }}
+          </button>
+        </div>
+        <p class="mt-1 text-[11px] text-muted leading-snug">
+          Favours cards that do this, rather than filtering to them — a theme
+          your commander's pool cannot serve gives a normal deck, not a broken
+          one. The status line reports how many of the on-theme cards available
+          actually made it in.
+        </p>
+
         <label class="text-[11px] text-muted block mt-3">Max bracket</label>
         <select
           [ngModel]="maxBracket()"

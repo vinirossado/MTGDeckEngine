@@ -75,10 +75,12 @@ export class MtgApiService {
     totalBudgetEur: number,
     maxCardPriceEur?: number,
     maxBracket?: number | null,
+    themes?: string[],
   ): Observable<BudgetDeck> {
     let p = new HttpParams().set('totalBudgetEur', totalBudgetEur);
     if (maxCardPriceEur != null) p = p.set('maxCardPriceEur', maxCardPriceEur);
     if (maxBracket != null) p = p.set('maxBracket', maxBracket);
+    if (themes?.length) p = p.set('themes', themes.join(','));
     return this.http.get<BudgetDeck>(
       `${this.base}/commanders/${encodeURIComponent(slug)}/build-deck`,
       { params: p },
