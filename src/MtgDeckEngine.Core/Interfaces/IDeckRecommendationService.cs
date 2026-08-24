@@ -64,6 +64,19 @@ public interface IDeckRecommendationService
         CancellationToken ct);
 
     /// <summary>
+    /// As above, but favouring cards that match the named themes (wheel,
+    /// lifedrain, tokens, storm, stax, blink, sacrifice, counters, graveyard).
+    /// A preference applied to ranking, not a filter.
+    /// </summary>
+    Task<BudgetDeck> BuildBudgetDeckAsync(
+        string commanderSlug,
+        decimal totalBudgetEur,
+        RecommendationFilter filter,
+        int? maxBracket,
+        IReadOnlyList<string>? themeKeys,
+        CancellationToken ct);
+
+    /// <summary>
     /// Tournament-derived commander meta: entry counts, top-cut counts, win rate.
     /// Combines EDHTop16 aggregate stats with derived counts from individual
     /// tournament entries we've ingested.
@@ -118,4 +131,19 @@ public sealed record BudgetDeck(
     // Printed card name for the slug. Carried on the response because callers
     // cannot derive it: un-slugifying is lossy, and the commander list endpoint
     // is capped, so a low-play commander simply is not in it.
-    string? CommanderName = null);
+    string? CommanderName = null,
+    /// <summary>Themes the build was asked to lean into, if any.</summary>
+    IReadOnlyList<string>? Themes = null,
+    /// <summary>
+    /// How many of the 99 match a requested theme. Null when none was asked
+    /// for. Read it against a themeless build of the same budget — that
+    /// difference is what the request actually bought.
+    /// </summary>
+    int? ThemeMatchCount = null,
+    /// <summary>
+    /// How many cards in the candidate pool matched a requested theme at all.
+    /// Without it the match count is uninterpretable: 7 out of 10 available is
+    /// the theme working, 7 out of 60 is it barely trying. A low number here
+    /// means this commander's pool simply is not built around that theme.
+    /// </summary>
+    int? ThemeCandidateCount = null);

@@ -277,7 +277,17 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         RecommendationFilter filter,
         int? maxBracket,
         CancellationToken ct)
-        => BuildBudgetDeckAsync(commanderSlug, totalBudgetEur, filter, maxBracket, null, null, ct);
+        => BuildBudgetDeckAsync(commanderSlug, totalBudgetEur, filter, maxBracket, null, null, null, ct);
+
+    public Task<BudgetDeck> BuildBudgetDeckAsync(
+        string commanderSlug,
+        decimal totalBudgetEur,
+        RecommendationFilter filter,
+        int? maxBracket,
+        IReadOnlyList<string>? themeKeys,
+        CancellationToken ct)
+        => BuildBudgetDeckAsync(commanderSlug, totalBudgetEur, filter, maxBracket, null, null,
+            DeckTheme.Resolve(themeKeys), ct);
 
     private async Task<BudgetDeck> BuildBudgetDeckAsync(
         string commanderSlug,
@@ -286,6 +296,7 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         int? maxBracket,
         DeckStrategy? strategy,
         IReadOnlyList<CardRecommendation>? sharedPool,
+        IReadOnlyList<DeckTheme>? themes,
         CancellationToken ct)
     {
         var constraint = maxBracket is int bracketTarget
@@ -322,7 +333,7 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
             .Where(c => constraint is null || !IsBannedByBracket(constraint, c))
             .ToList();
 
-        var score = BuildScoreMap(pool);
+        var score = BuildScoreMap(pool, themes);
         var identity = DeckColorIdentity(pool);
         var quotas = strategy?.Quotas ?? DeckBuildQuotas.Default;
 
@@ -376,8 +387,17 @@ GROUP BY ?entries ?topCuts ?winRate ?conversion ?metaShare";
         var commanderName = commanderNames is null
             ? null
             : await commanderNames.ResolveAsync(commanderSlug, ct).ConfigureAwait(false);
+        var themed = themes is { Count: > 0 };
+        var themeMatches = themed
+            ? chosen.Count(c => themes!.Any(t => t.Matches(c.OracleText)))
+            : (int?)null;
+        var themeCandidates = themed
+            ? pool.Count(c => themes!.Any(t => t.Matches(c.OracleText)))
+            : (int?)null;
+
         return new BudgetDeck(
-            commanderSlug, total, chosen.Count, chosen, bracket, commanderName);
+            commanderSlug, total, chosen.Count, chosen, bracket, commanderName,
+            themes?.Select(t => t.Key).ToList(), themeMatches, themeCandidates);
     }
 
     /// <summary>
@@ -555,7 +575,7 @@ SELECT ?deck ?card ?typeLine ?oracleText WHERE {{
         CancellationToken ct)
     {
         var deck = await BuildBudgetDeckAsync(
-            commanderSlug, totalBudgetEur, filter, bracket, strategy, pool, ct)
+            commanderSlug, totalBudgetEur, filter, bracket, strategy, pool, null, ct)
             .ConfigureAwait(false);
 
         if (deck.Cards.Count == 0) return null;
@@ -795,6 +815,13 @@ SELECT ?deck ?card ?typeLine ?oracleText WHERE {{
     private static double ScoreOf(IReadOnlyDictionary<string, double> score, CardRecommendation c)
         => score.TryGetValue(c.OracleId, out var s) ? s : 0.0;
 
+    /// <summary>
+    /// Added to a card's score when it matches a requested theme. Tuned so a
+    /// matching card outranks a non-matching one of clearly better pedigree,
+    /// without swamping the win-rate signal entirely.
+    /// </summary>
+    private const double ThemeBonus = 0.25;
+
     // How strongly a card's observed record is pulled toward the pool average.
     // In units of games: a card with PriorGames games of evidence sits halfway
     // between its own record and the pool mean. Commander tournament samples are
@@ -808,7 +835,9 @@ SELECT ?deck ?card ?typeLine ?oracleText WHERE {{
     /// volume, EDHREC inclusion and synergy fill in where match records are
     /// thin or absent.
     /// </summary>
-    private static Dictionary<string, double> BuildScoreMap(IReadOnlyList<CardRecommendation> pool)
+    private static Dictionary<string, double> BuildScoreMap(
+        IReadOnlyList<CardRecommendation> pool,
+        IReadOnlyList<DeckTheme>? themes = null)
     {
         // Pool-wide prior: the aggregate win rate across every card with a
         // record. Falls back to 0.5 when the graph has no tournament data.
@@ -859,12 +888,21 @@ SELECT ?deck ?card ?typeLine ?oracleText WHERE {{
             var evidenceWeight = 0.50 * confidence;
             var popularityWeight = 0.50 - evidenceWeight;
 
-            map[c.OracleId] =
+            var baseScore =
                   evidenceWeight   * winTerm
                 + popularityWeight * top
                 + 0.30 * top
                 + 0.15 * incl
                 + 0.05 * syn;
+
+            // A theme is a preference, not a filter. The bonus is large enough
+            // to lift a matching mid-tier card over a non-matching good one —
+            // which is the whole point of asking — but a card matching nothing
+            // keeps its full base score, so the deck degrades into a normal
+            // build rather than collapsing when a theme is thin.
+            var matched = themes is { Count: > 0 }
+                       && themes.Any(t => t.Matches(c.OracleText));
+            map[c.OracleId] = matched ? baseScore + ThemeBonus : baseScore;
         }
         return map;
     }

@@ -545,6 +545,29 @@ a different subject. Every commander-facing query keys on the slug node, so a
 commander ingested by name was invisible in the commander list until that node
 existed.
 
+### Themes, and why there are no archetypes
+
+Clustering a commander's tournament decks does **not** produce clean
+archetypes. For Kefka (241 decks) the within-cluster Jaccard similarity is
+0.52–0.59 against 0.58 between any two of its decks — the clusters are no
+tighter than the population. Its decks are a spectrum, not three families, and
+naming groups off that would invent sharpness the data lacks. One grouping did
+read as something (Rain of Filth / Ad Nauseam / Culling the Weak, a fast-mana
+shell) but the others did not.
+
+So instead of inferring archetypes, you name one: `?themes=wheel,lifedrain`
+favours cards whose oracle text matches. Nine themes — wheel, lifedrain,
+tokens, storm, stax, blink, sacrifice, counters, graveyard.
+
+It is a **preference on ranking, not a filter**. A theme the pool cannot serve
+yields a normal deck rather than a broken one.
+
+The response reports `themeMatchCount` **and** `themeCandidateCount`, because
+the first is meaningless alone. Kefka at EUR 600 gets 7 of 10 available on-theme
+cards — the theme working against a pool with almost no wheels. Xyris, an actual
+wheel commander, gets 17 of 28. Same feature, and only the pair of numbers tells
+you which situation you are in.
+
 ### EDHREC categories are card types, not roles
 
 EDHREC's commander page sections are `Instants`, `Sorceries`, `Creatures`,
