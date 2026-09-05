@@ -33,10 +33,15 @@ builder.Services.AddHttpClient<FusekiGraphRepository>(c =>
 {
     c.DefaultRequestHeaders.Add("Accept", "application/sparql-results+json");
 });
-builder.Services.AddSingleton<IGraphRepository>(sp =>
-    sp.GetRequiredService<FusekiGraphRepository>());
-
 builder.Services.AddSingleton<ShaclValidator>();
+
+// Every write goes through SHACL on the way to the store. Decorating the
+// repository is what makes that unconditional — see ValidatingGraphRepository.
+builder.Services.AddSingleton<IGraphRepository>(sp =>
+    new ValidatingGraphRepository(
+        sp.GetRequiredService<FusekiGraphRepository>(),
+        sp.GetRequiredService<ShaclValidator>(),
+        sp.GetRequiredService<ILogger<ValidatingGraphRepository>>()));
 builder.Services.AddSingleton<IDeckRecommendationService, DeckRecommendationService>();
 builder.Services.AddSingleton<IFormatService, FormatService>();
 builder.Services.AddSingleton<ISavedDeckService, SavedDeckService>();

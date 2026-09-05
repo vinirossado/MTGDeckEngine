@@ -58,9 +58,13 @@ mtg:TournamentShape a sh:NodeShape ;
         sh:minCount 1 ;
         sh:message "Tournament must have a name."
     ] ;
+    # Optional: EDHTop16 publishes no date for ~9% of tournaments (104 of 1,134
+    # at the time of writing). A tournament without a date is upstream reality,
+    # not corrupt data — so absence is allowed, but a date that IS present must
+    # be a real xsd:date.
     sh:property [
         sh:path mtg:hasDate ;
-        sh:minCount 1 ;
+        sh:maxCount 1 ;
         sh:datatype xsd:date ;
-        sh:message "Tournament must have a date."
+        sh:message "Tournament date, when present, must be an xsd:date."
     ] .
