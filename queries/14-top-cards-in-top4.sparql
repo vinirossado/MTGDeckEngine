@@ -7,7 +7,7 @@ SELECT ?name ?priceEur (COUNT(DISTINCT ?deck) AS ?numDecks) WHERE {
   ?entry mtg:inTournament ?t ;
          mtg:hasPlacement ?placement ;
          mtg:hasDeck       ?deck .
-  ?deck  mtg:hasCommander  mtg:commander/xyris-the-writhing-storm ;
+  ?deck  mtg:hasCommander  mtg:commander\/xyris-the-writhing-storm ;
          mtg:containsCard  ?card .
   ?card  mtg:hasName       ?name .
   OPTIONAL { ?card mtg:hasPriceEur ?priceEur }

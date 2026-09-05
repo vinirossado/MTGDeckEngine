@@ -12,7 +12,7 @@ SELECT ?name ?inc (COUNT(?topCutDeck) AS ?topCutAppearances) WHERE {
   OPTIONAL {
     ?entry mtg:hasPlacement ?p ;
            mtg:hasDeck       ?topCutDeck .
-    ?topCutDeck mtg:hasCommander mtg:commander/xyris-the-writhing-storm ;
+    ?topCutDeck mtg:hasCommander mtg:commander\/xyris-the-writhing-storm ;
                 mtg:containsCard ?card .
     FILTER (?p <= 8)
   }

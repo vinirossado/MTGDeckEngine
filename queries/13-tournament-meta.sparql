@@ -3,7 +3,7 @@ PREFIX mtg: <http://example.org/mtg#>
 # Commander-level tournament signals (EDHTop16, six-month window).
 # Win rate is per-seat; conversion is "what % of entries reached top-cut".
 SELECT ?entries ?topCuts ?winRate ?conversion ?metaShare WHERE {
-  mtg:commander/xyris-the-writhing-storm
+  mtg:commander\/xyris-the-writhing-storm
     mtg:hasTournamentEntryCount    ?entries ;
     mtg:hasTournamentTopCutCount   ?topCuts ;
     mtg:hasTournamentWinRate       ?winRate ;

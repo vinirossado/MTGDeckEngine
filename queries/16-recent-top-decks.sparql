@@ -6,7 +6,7 @@ SELECT ?date ?tName ?placement ?pilot ?priceUsd WHERE {
   ?entry mtg:inTournament ?t ;
          mtg:hasPlacement ?placement ;
          mtg:hasDeck       ?deck .
-  ?deck  mtg:hasCommander mtg:commander/xyris-the-writhing-storm .
+  ?deck  mtg:hasCommander mtg:commander\/xyris-the-writhing-storm .
   ?t     mtg:hasName ?tName ;
          mtg:hasDate ?date .
   OPTIONAL { ?entry mtg:hasPilotName ?pilot }
