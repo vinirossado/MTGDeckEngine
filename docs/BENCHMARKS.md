@@ -61,6 +61,46 @@ SPARQL UPDATE split into 40 requests (1859635 triples) → (default)
 8.8 MB of N-Triples is ~50,000 triples, so the cap is reached at roughly
 46k triples per request.
 
+## Ingestion (one commander)
+
+`POST /api/commanders/{slug}/ingest` against an empty throwaway Fuseki, with
+the Scryfall bulk cache already warm on disk. Duration is the API's own
+`IngestSummary.durationMs`.
+
+| Run | Commander | Graph state | Duration | EDHREC | Scryfall cache | Tournament entries |
+|---|---|---|---:|---:|---|---:|
+| 1 | xyris-the-writhing-storm | empty | **8.32 s** | 250 | 247/249 hit | 25 |
+| 2 | xyris-the-writhing-storm | already ingested | **4.83 s** | 250 | 247/249 hit | 25 |
+| 3 | kefka-court-mage | empty for this slug | **15.33 s** | 250 | 237/248 hit | 100 |
+
+Result: 23,033 triples for two commanders (20,565 default + 2,468 named).
+
+### Ingestion is network-bound, not graph-bound
+
+Run 1 wrote 7,583 triples. At the measured ~40k triples/s that is **~0.19 s of
+writing inside an 8.32 s call** — roughly 2%. The other 98% is HTTP to EDHREC
+and EDHTop16.
+
+Two consequences visible in the numbers above:
+
+- **Re-ingesting is faster than first ingest** (4.83 s vs 8.32 s) even though
+  it does strictly more work — it adds the `MutableProperties.ClearAsync`
+  DELETE. The bulk cache is warm in-process by then, so the saving is all
+  local lookup, not graph work.
+- **The spread tracks tournament entries, not triples.** Kefka takes 15.33 s
+  against Xyris's 8.32 s because EDHTop16 returned 671 entries for Kefka
+  (100 ingested, the `MaxTournamentEntriesPerCommander` cap) versus 69 for
+  Xyris (25 ingested). Same triple volume, double the wall clock.
+
+The triplestore is nowhere near being the bottleneck at this scale.
+
+### Cold start
+
+The Scryfall bulk cache (`scryfall-default-cards.json`, **595 MB**) has a
+7-day TTL. When it is stale or missing, the first ingest of the week also
+downloads it. The runs above deliberately used a warm cache, so that download
+is *not* included in the times.
+
 ## Query latency
 
 All 19 versioned queries in `queries/`, p50 of 9 runs after 2 warm-up runs,
